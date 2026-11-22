@@ -10,7 +10,27 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '21'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Run unit tests
+        run: ./gradlew :app:testDebugUnitTest --console=plain
+
+  release:
+    name: Build release APK
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
     runs-on: ubuntu-latest
     env:
       KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -24,45 +44,73 @@ jobs:
           distribution: zulu
           java-version: '21'
 
-      - name: Decode keystore
-        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/my-release-key.jks
-
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Run unit tests
-        run: ./gradlew :app:testDebugUnitTest --console=plain
+      - name: Check signing secrets
+        id: signing
+        run: |
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            echo "note=Signed with the project keystore." >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "note=Debug-signed APK: add KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS and KEY_PASSWORD repository secrets for a signed release." >> "$GITHUB_OUTPUT"
+            echo "::warning::Signing secrets are not configured; attaching a debug-signed APK."
+          fi
+
+      - name: Decode keystore
+        if: steps.signing.outputs.signed == 'true'
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/my-release-key.jks
 
       - name: Extract version
         id: version
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          if [ "$VERSION" = "workflow_dispatch" ] || [ -z "$VERSION" ]; then
+          if [[ "$GITHUB_REF_NAME" == v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
             VERSION="$(date +%Y.%m.%d)"
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "VERSION_CODE=$(echo "$VERSION" | tr -d '.')" >> "$GITHUB_ENV"
 
-      - name: Build release APK
+      - name: Build signed release APK
+        if: steps.signing.outputs.signed == 'true'
         run: ./gradlew :app:assembleRelease -PversionName=${{ env.VERSION }} -PversionCode=${{ env.VERSION_CODE }} --console=plain
 
-      - name: Rename APK
-        run: cp app/build/outputs/apk/release/app-release.apk "app/build/outputs/apk/release/CommonsNeedsPhoto${{ env.VERSION }}.apk"
+      - name: Build debug APK
+        if: steps.signing.outputs.signed == 'false'
+        run: ./gradlew :app:assembleDebug -PversionName=${{ env.VERSION }} -PversionCode=${{ env.VERSION_CODE }} --console=plain
+
+      - name: Prepare APK
+        id: apk
+        run: |
+          if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
+            SOURCE="app/build/outputs/apk/release/app-release.apk"
+            SUFFIX=""
+          else
+            SOURCE="app/build/outputs/apk/debug/app-debug.apk"
+            SUFFIX="-debug"
+          fi
+          DEST="app/build/outputs/apk/CommonsNeedsPhoto${VERSION}${SUFFIX}.apk"
+          cp "$SOURCE" "$DEST"
+          echo "path=$DEST" >> "$GITHUB_OUTPUT"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: CommonsNeedsPhoto-${{ env.VERSION }}
-          path: app/build/outputs/apk/release/CommonsNeedsPhoto${{ env.VERSION }}.apk
+          path: ${{ steps.apk.outputs.path }}
 
       - name: Publish GitHub release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: ncipollo/release-action@v1
         with:
-          artifacts: app/build/outputs/apk/release/CommonsNeedsPhoto${{ env.VERSION }}.apk
+          artifacts: ${{ steps.apk.outputs.path }}
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
-          body: "Automatically generated release from GitHub Actions"
+          body: |
+            Automatically generated release from GitHub Actions.
+            ${{ steps.signing.outputs.note }}
           draft: false
           prerelease: false

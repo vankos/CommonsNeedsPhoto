@@ -56,9 +56,36 @@ at a valid JDK explicitly:
 ```
 
 The project has the same tag-driven release setup as the sibling apps: pushing a tag such as
-`v2026.11.22` runs `.github/workflows/main.yml`, builds a signed release APK and attaches it to the
-GitHub release. Signing needs `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and
-`KEY_PASSWORD` repository secrets and `app/my-release-key.jks` in the build.
+`v2026.11.22` runs `.github/workflows/main.yml`, runs the unit tests, builds an APK and attaches it
+to the GitHub release.
+
+For a **signed** release, add `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and
+`KEY_PASSWORD` repository secrets and place `app/my-release-key.jks` in the build. Without those
+secrets the workflow still publishes a release, but with a **debug-signed** APK (it is marked as
+such in the release notes), so a tag is never left without an installable artifact.
+
+```bash
+base64 -w0 my-release-key.jks > my-release-key.jks.base64
+gh secret set KEYSTORE_BASE64 < my-release-key.jks.base64
+gh secret set KEYSTORE_PASSWORD --body "***"
+gh secret set KEY_ALIAS --body "***"
+gh secret set KEY_PASSWORD --body "***"
+```
+
+On Windows PowerShell:
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("my-release-key.jks")) |
+  Set-Content -NoNewline my-release-key.jks.base64
+gh secret set KEYSTORE_BASE64 < my-release-key.jks.base64
+```
+
+Create a release:
+
+```bash
+git tag v2026.11.22
+git push origin v2026.11.22
+```
 
 ## Logging in to upload
 

@@ -16,6 +16,11 @@ flows are implemented — there are no Explore/Bookmarks/Contributions tabs.
   original Commons app (`wikibase:around` + `FILTER NOT EXISTS { ?q wdt:P18 ?image }`) and shows
   the results on an OpenStreetMap map. Dense areas are clustered by screen cells; tapping a cluster
   zooms in, tapping a single pin opens the upload dialog.
+* **Manual refresh.** Panning and zooming keep the last result set and do **not** issue a query.
+  The **Search this area** button appears when the map centre moves more than 250 m from the last
+  searched centre. The **My location** button only recentres the map — it does not reload places;
+  tap **Search this area** (or the refresh icon) when you want fresh data. The next query radius is
+  derived from the current viewport (centre to the north-east corner, clamped to 0.5–30 km).
 * **Photo upload dialog.** Tap a pin to open a bottom sheet with the place name, description,
   distance, Wikidata link and a “No photo on Commons yet” badge. The sheet lets you:
   * take a photo with the camera or pick one from the gallery;

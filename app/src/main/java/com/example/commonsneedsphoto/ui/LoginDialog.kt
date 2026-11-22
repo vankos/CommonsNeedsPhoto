@@ -28,53 +28,96 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.commonsneedsphoto.R
+import com.example.commonsneedsphoto.data.network.TwoFactorMethod
 
 @Composable
 fun LoginDialog(
     state: LoginUiState,
     onLogin: (String, String) -> Unit,
+    onVerify: (String) -> Unit,
+    onBack: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var loginName by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
+    var code by rememberSaveable { mutableStateOf("") }
     val uriHandler = LocalUriHandler.current
 
     AlertDialog(
         onDismissRequest = { if (!state.isLoggingIn) onDismiss() },
-        title = { Text(stringResource(R.string.login_title)) },
+        title = {
+            Text(
+                stringResource(
+                    if (state.requiresTwoFactor) {
+                        R.string.login_two_factor_title
+                    } else {
+                        R.string.login_title
+                    },
+                ),
+            )
+        },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                Text(
-                    text = stringResource(R.string.login_explanation),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                TextButton(
-                    onClick = { uriHandler.openUri(BOT_PASSWORDS_URL) },
-                    enabled = !state.isLoggingIn,
-                ) {
-                    Text(stringResource(R.string.login_open_bot_passwords))
+                if (state.requiresTwoFactor) {
+                    Text(
+                        text = stringResource(
+                            when (state.twoFactorMethod) {
+                                TwoFactorMethod.EMAIL -> R.string.login_two_factor_email_hint
+                                else -> R.string.login_two_factor_totp_hint
+                            },
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = code,
+                        onValueChange = { code = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.login_two_factor_code)) },
+                        singleLine = true,
+                        enabled = !state.isLoggingIn,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = if (state.twoFactorMethod == TwoFactorMethod.EMAIL) {
+                                KeyboardType.Text
+                            } else {
+                                KeyboardType.NumberPassword
+                            },
+                        ),
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.login_explanation),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    TextButton(
+                        onClick = { uriHandler.openUri(BOT_PASSWORDS_URL) },
+                        enabled = !state.isLoggingIn,
+                    ) {
+                        Text(stringResource(R.string.login_open_bot_passwords))
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    OutlinedTextField(
+                        value = loginName,
+                        onValueChange = { loginName = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.username)) },
+                        placeholder = { Text(stringResource(R.string.login_name_hint)) },
+                        singleLine = true,
+                        enabled = !state.isLoggingIn,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.bot_password)) },
+                        singleLine = true,
+                        enabled = !state.isLoggingIn,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    )
                 }
-                Spacer(Modifier.height(4.dp))
-                OutlinedTextField(
-                    value = loginName,
-                    onValueChange = { loginName = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.username)) },
-                    placeholder = { Text(stringResource(R.string.login_name_hint)) },
-                    singleLine = true,
-                    enabled = !state.isLoggingIn,
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.bot_password)) },
-                    singleLine = true,
-                    enabled = !state.isLoggingIn,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                )
+
                 state.error?.let { error ->
                     Spacer(Modifier.height(8.dp))
                     Text(
@@ -83,17 +126,26 @@ fun LoginDialog(
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.privacy_note),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+
+                if (!state.requiresTwoFactor) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.privacy_note),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
-                onClick = { onLogin(loginName, password) },
+                onClick = {
+                    if (state.requiresTwoFactor) {
+                        onVerify(code)
+                    } else {
+                        onLogin(loginName, password)
+                    }
+                },
                 enabled = !state.isLoggingIn,
             ) {
                 if (state.isLoggingIn) {
@@ -105,13 +157,38 @@ fun LoginDialog(
                     Spacer(Modifier.size(8.dp))
                     Text(stringResource(R.string.login_in_progress))
                 } else {
-                    Text(stringResource(R.string.login_action))
+                    Text(
+                        stringResource(
+                            if (state.requiresTwoFactor) {
+                                R.string.login_verify
+                            } else {
+                                R.string.login_action
+                            },
+                        ),
+                    )
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !state.isLoggingIn) {
-                Text(stringResource(R.string.cancel))
+            TextButton(
+                onClick = {
+                    if (state.requiresTwoFactor) {
+                        onBack()
+                    } else {
+                        onDismiss()
+                    }
+                },
+                enabled = !state.isLoggingIn,
+            ) {
+                Text(
+                    stringResource(
+                        if (state.requiresTwoFactor) {
+                            R.string.login_back
+                        } else {
+                            R.string.cancel
+                        },
+                    ),
+                )
             }
         },
     )

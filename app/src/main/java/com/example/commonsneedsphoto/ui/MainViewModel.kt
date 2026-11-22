@@ -236,6 +236,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (current.isUploading) {
             // The work has not started yet; closing the sheet cancels the queued upload.
             current.workName?.let { UploadWork.cancel(app, it) }
+        } else {
+            // Without the sheet there is no retry UI, so a saved chunk position is useless.
+            current.resumeKey?.let { resumeKey ->
+                viewModelScope.launch(Dispatchers.IO) {
+                    container.uploadResumeStore.clear(resumeKey)
+                }
+            }
         }
         uploadObserverJob?.cancel()
         uploadObserverJob = null

@@ -351,6 +351,8 @@ fun MapScreen(viewModel: MainViewModel) {
         LoginDialog(
             state = state.login,
             onLogin = viewModel::login,
+            onVerify = viewModel::verifyTwoFactor,
+            onBack = viewModel::backToLoginForm,
             onDismiss = viewModel::dismissLogin,
         )
     }

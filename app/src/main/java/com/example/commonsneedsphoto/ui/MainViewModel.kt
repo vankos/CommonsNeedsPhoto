@@ -11,6 +11,8 @@ import com.example.commonsneedsphoto.data.model.LatLon
 import com.example.commonsneedsphoto.data.model.NearbyPlace
 import com.example.commonsneedsphoto.data.model.distanceMeters
 import com.example.commonsneedsphoto.data.network.CommonsApiException
+import com.example.commonsneedsphoto.data.network.LoginResult
+import com.example.commonsneedsphoto.data.network.TwoFactorMethod
 import com.example.commonsneedsphoto.data.network.UploadedFile
 import com.example.commonsneedsphoto.data.network.WikidataApiException
 import com.example.commonsneedsphoto.data.photo.PhotoProcessor
@@ -57,6 +59,8 @@ data class UploadUiState(
 
 data class LoginUiState(
     val isLoggingIn: Boolean = false,
+    val requiresTwoFactor: Boolean = false,
+    val twoFactorMethod: TwoFactorMethod? = null,
     val error: String? = null,
 )
 
@@ -302,7 +306,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun login(loginName: String, password: String) {
         if (loginName.isBlank() || password.isBlank()) {
             _state.update {
-                it.copy(login = LoginUiState(error = app.getString(R.string.login_failed, "empty fields")))
+                it.copy(login = LoginUiState(error = app.getString(R.string.login_empty_fields)))
             }
             return
         }
@@ -310,15 +314,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         loginJob = viewModelScope.launch {
             _state.update { it.copy(login = LoginUiState(isLoggingIn = true)) }
             try {
-                val name = container.commonsApi.login(loginName, password)
-                _state.update {
-                    it.copy(
-                        userName = name,
-                        showLogin = false,
-                        login = LoginUiState(),
-                        upload = it.upload?.copy(error = null),
-                        message = app.getString(R.string.logged_in_as, name),
-                    )
+                when (val result = container.commonsApi.login(loginName, password)) {
+                    is LoginResult.Success -> finishLogin(result.userName)
+                    is LoginResult.VerificationRequired -> _state.update {
+                        it.copy(
+                            login = LoginUiState(
+                                requiresTwoFactor = true,
+                                twoFactorMethod = result.method,
+                            ),
+                        )
+                    }
                 }
             } catch (cancel: CancellationException) {
                 throw cancel
@@ -337,6 +342,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun verifyTwoFactor(code: String) {
+        if (code.isBlank()) {
+            _state.update {
+                it.copy(login = it.login.copy(error = app.getString(R.string.login_missing_code)))
+            }
+            return
+        }
+        loginJob?.cancel()
+        loginJob = viewModelScope.launch {
+            _state.update { it.copy(login = it.login.copy(isLoggingIn = true, error = null)) }
+            try {
+                when (val result = container.commonsApi.completeTwoFactor(code)) {
+                    is LoginResult.Success -> finishLogin(result.userName)
+                    is LoginResult.VerificationRequired -> _state.update {
+                        it.copy(
+                            login = it.login.copy(
+                                isLoggingIn = false,
+                                requiresTwoFactor = true,
+                                twoFactorMethod = result.method,
+                                error = app.getString(R.string.login_wrong_code),
+                            ),
+                        )
+                    }
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (exception: Exception) {
+                _state.update {
+                    it.copy(
+                        login = it.login.copy(
+                            isLoggingIn = false,
+                            error = app.getString(
+                                R.string.login_failed,
+                                exception.message ?: exception.javaClass.simpleName,
+                            ),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun finishLogin(name: String) {
+        _state.update {
+            it.copy(
+                userName = name,
+                showLogin = false,
+                login = LoginUiState(),
+                upload = it.upload?.copy(error = null),
+                message = app.getString(R.string.logged_in_as, name),
+            )
+        }
+    }
+
     fun logout() {
         viewModelScope.launch {
             container.commonsApi.logout()
@@ -345,12 +404,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun showLogin() {
+        container.commonsApi.resetLogin()
         _state.update { it.copy(showLogin = true, login = LoginUiState()) }
     }
 
     fun dismissLogin() {
         loginJob?.cancel()
+        container.commonsApi.resetLogin()
         _state.update { it.copy(showLogin = false, login = LoginUiState()) }
+    }
+
+    fun backToLoginForm() {
+        loginJob?.cancel()
+        container.commonsApi.resetLogin()
+        _state.update { it.copy(login = LoginUiState()) }
     }
 
     fun upload() {

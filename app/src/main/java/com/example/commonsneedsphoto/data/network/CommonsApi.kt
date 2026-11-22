@@ -34,11 +34,27 @@ data class UploadedFile(
     val pageUrl: String,
 )
 
+enum class TwoFactorMethod { TOTP, EMAIL }
+
+sealed interface LoginResult {
+    data class Success(val userName: String) : LoginResult
+    data class VerificationRequired(val method: TwoFactorMethod) : LoginResult
+}
+
+private data class PendingVerification(
+    val loginName: String,
+    val password: String,
+    val loginToken: String,
+    val method: TwoFactorMethod,
+)
+
 /**
  * Minimal Wikimedia Commons client for the MVP upload flow:
- * bot-password login -> CSRF token -> multipart action=upload.
+ * account (or bot-password) login -> optional two-factor step -> CSRF token ->
+ * multipart action=upload.
  *
- * Mirrors the endpoint/parameters used by the original Commons Android app.
+ * The account login uses the same action=clientlogin flow as the original
+ * Commons Android app, including the second step for TOTP/email verification.
  */
 class CommonsApi(
     private val session: CommonsSession,
@@ -50,41 +66,92 @@ class CommonsApi(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun login(loginName: String, password: String): String = withContext(Dispatchers.IO) {
-        if (loginName.trim().contains('@')) {
-            loginWithBotPassword(loginName, password)
-        } else {
-            loginWithAccount(loginName, password)
+    private var pendingVerification: PendingVerification? = null
+
+    suspend fun login(loginName: String, password: String): LoginResult =
+        withContext(Dispatchers.IO) {
+            pendingVerification = null
+            if (loginName.trim().contains('@')) {
+                LoginResult.Success(loginWithBotPassword(loginName, password))
+            } else {
+                val name = loginName.trim()
+                val token = fetchToken("login")
+                parseAccountLogin(
+                    root = postClientLogin(name, password, token),
+                    loginName = name,
+                    password = password,
+                    loginToken = token,
+                )
+            }
         }
+
+    /**
+     * The second `clientlogin` request. It reuses the logintoken and keeps the
+     * credentials in memory only for the duration of the verification step.
+     */
+    suspend fun completeTwoFactor(code: String): LoginResult =
+        withContext(Dispatchers.IO) {
+            val pending = pendingVerification ?: throw CommonsApiException(
+                "login-failed",
+                "The login attempt expired. Start again.",
+            )
+            parseAccountLogin(
+                root = postClientLogin(
+                    loginName = pending.loginName,
+                    password = pending.password,
+                    loginToken = pending.loginToken,
+                    code = code.trim(),
+                    method = pending.method,
+                ),
+                loginName = pending.loginName,
+                password = pending.password,
+                loginToken = pending.loginToken,
+            )
+        }
+
+    fun resetLogin() {
+        pendingVerification = null
     }
 
-    private fun loginWithAccount(loginName: String, password: String): String {
-        val token = fetchToken("login")
-        val body = MultipartBody.Builder()
-            .setType(MultipartBody.FORM)
-            .addFormDataPart("action", "clientlogin")
-            .addFormDataPart("format", "json")
-            .addFormDataPart("formatversion", "2")
-            .addFormDataPart("username", loginName.trim())
-            .addFormDataPart("password", password)
-            .addFormDataPart("logintoken", token)
-            .addFormDataPart("loginreturnurl", "https://commons.wikimedia.org/")
-            .addFormDataPart("uselang", "en")
-            .build()
-        val root = execute(body)
+    private fun postClientLogin(
+        loginName: String,
+        password: String,
+        loginToken: String,
+        code: String? = null,
+        method: TwoFactorMethod? = null,
+    ): JsonObject {
+        val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
+        for ((name, value) in clientLoginFields(loginName, password, loginToken, code, method)) {
+            builder.addFormDataPart(name, value)
+        }
+        return execute(builder.build())
+    }
+
+    private fun parseAccountLogin(
+        root: JsonObject,
+        loginName: String,
+        password: String,
+        loginToken: String,
+    ): LoginResult {
         val clientlogin = root["clientlogin"]?.jsonObject
             ?: throw CommonsApiException("login-failed", root.errorText() ?: "Login failed")
         return when (clientlogin.string("status")) {
             "PASS" -> {
-                val name = clientlogin.string("username") ?: loginName.trim()
+                val name = clientlogin.string("username") ?: loginName
                 session.userName = name
-                name
+                pendingVerification = null
+                LoginResult.Success(name)
             }
-            "UI" -> throw CommonsApiException(
-                "login-verification",
-                "This account requires additional verification (two-factor authentication or a CAPTCHA). " +
-                    "Please create a bot password and log in as name@bot instead.",
-            )
+            "UI" -> {
+                val required = parseVerificationRequest(clientlogin)
+                pendingVerification = PendingVerification(
+                    loginName = loginName,
+                    password = password,
+                    loginToken = loginToken,
+                    method = required.method,
+                )
+                required
+            }
             else -> throw CommonsApiException(
                 "login-failed",
                 clientlogin.string("reason")
@@ -135,6 +202,7 @@ class CommonsApi(
             execute(body)
         }
         session.clear()
+        pendingVerification = null
     }
 
     suspend fun upload(
@@ -321,4 +389,51 @@ class CommonsApi(
     private companion object {
         const val API_URL = "https://commons.wikimedia.org/w/api.php"
     }
+}
+
+/**
+ * Fields of the first and second `action=clientlogin` requests. Kept pure so
+ * the two-factor branch can be tested without a network or an account.
+ */
+internal fun clientLoginFields(
+    loginName: String,
+    password: String,
+    loginToken: String,
+    code: String? = null,
+    method: TwoFactorMethod? = null,
+): List<Pair<String, String>> = buildList {
+    add("action" to "clientlogin")
+    add("format" to "json")
+    add("formatversion" to "2")
+    add("username" to loginName)
+    add("password" to password)
+    add("logintoken" to loginToken)
+    add("uselang" to "en")
+    if (code == null) {
+        add("loginreturnurl" to "https://commons.wikimedia.org/")
+    } else {
+        when (method) {
+            TwoFactorMethod.TOTP -> add("OATHToken" to code)
+            TwoFactorMethod.EMAIL -> add("token" to code)
+            null -> Unit
+        }
+        add("logincontinue" to "1")
+    }
+}
+
+internal fun parseVerificationRequest(clientlogin: JsonObject): LoginResult.VerificationRequired {
+    val requests = clientlogin["requests"]?.jsonArray ?: JsonArray(emptyList())
+    val ids = requests.mapNotNull { request ->
+        request.jsonObject["id"]?.jsonPrimitive?.contentOrNull
+    }
+    val method = when {
+        ids.any { it.endsWith("TOTPAuthenticationRequest") } -> TwoFactorMethod.TOTP
+        ids.any { it.endsWith("EmailAuthAuthenticationRequest") } -> TwoFactorMethod.EMAIL
+        else -> throw CommonsApiException(
+            "login-verification",
+            "This account asks for a CAPTCHA or another verification step. " +
+                "Please use a bot password (name@bot).",
+        )
+    }
+    return LoginResult.VerificationRequired(method)
 }

@@ -5,6 +5,7 @@ import com.example.commonsneedsphoto.data.location.LocationProvider
 import com.example.commonsneedsphoto.data.network.CommonsApi
 import com.example.commonsneedsphoto.data.network.CommonsSession
 import com.example.commonsneedsphoto.data.network.Network
+import com.example.commonsneedsphoto.data.network.WikidataApi
 import com.example.commonsneedsphoto.data.network.WikidataNearbyRepository
 import com.example.commonsneedsphoto.data.photo.PhotoProcessor
 import org.osmdroid.config.Configuration
@@ -13,6 +14,7 @@ import java.io.File
 class AppContainer(application: Application) {
     val session = CommonsSession(application)
     val commonsApi = CommonsApi(session)
+    val wikidataApi = WikidataApi(session)
     val nearbyRepository = WikidataNearbyRepository()
     val locationProvider = LocationProvider(application)
 }

@@ -26,7 +26,10 @@ flows are implemented — there are no Explore/Bookmarks/Contributions tabs.
   `action=query&meta=tokens&type=csrf` → `action=upload` with a multipart file and a
   `{{Information}}` / `{{Location}}` / `{{self|cc-by-sa-4.0}}` wikitext page. The file name is
   checked against Commons and a random suffix is appended if it already exists, so files are not
-  overwritten.
+  overwritten. After the upload the app adds the file to the Wikidata item as the **P18** (image)
+  claim — that is what keeps the point out of the next search. The Wikidata edit is best effort: a
+  failure there never undoes the Commons upload, and the success screen explains that the point may
+  return.
 * **Photo pipeline.** The selected image is decoded, oriented from EXIF, scaled to at most 4096 px,
   saved as JPEG (quality 92), and the camera EXIF is copied. If the photo has no GPS, the place
   coordinates are written into EXIF.
@@ -97,8 +100,9 @@ Commons uploads require an account. The app supports two ways to sign in:
 2. **Wikimedia bot password** (recommended for 2FA, and if you do not want to type your normal
    password into a third-party app):
    1. Open <https://commons.wikimedia.org/wiki/Special:BotPasswords> in a browser and log in.
-   2. Create a bot password, e.g. `phone`, and grant **Upload new files** (and **Upload, replace,
-      and move files** if you want to replace files).
+   2. Create a bot password, e.g. `phone`, and grant **Upload new files** and **Create, edit, and
+      move pages** (the second grant is used for the automatic Wikidata `P18` update; it is only
+      needed if you want the point to disappear from the map for good).
    3. Note the generated login name `YourUsername@phone` and the one-time password.
    4. In the app tap the account icon (or “Log in” in the upload sheet), enter
       `YourUsername@phone` and the generated password.
@@ -122,6 +126,7 @@ app/src/main/java/com/example/commonsneedsphoto/
 │   ├── network/
 │   │   ├── WikidataNearbyRepository.kt  SPARQL query + kotlinx.serialization parser
 │   │   ├── CommonsApi.kt               login, CSRF, unique file name, multipart upload
+│   │   ├── WikidataApi.kt              P18 claim after upload (best effort)
 │   │   ├── CommonsSession.kt           persistent OkHttp CookieJar
 │   │   └── Network.kt                  shared OkHttp client and User-Agent
 │   ├── photo/PhotoProcessor.kt    EXIF rotation, resize, JPEG, geotagging
@@ -182,9 +187,10 @@ User-Agent for osmdroid and should not be used for bulk tile downloads.
 ## Known limitations (MVP scope)
 
 * At most **500 places per search**; a city centre will reach that limit.
-* After a successful upload the pin is removed locally, but the Wikidata item is **not** given a
-  `P18` claim (the original app does that extra step). A refresh can therefore bring the pin back
-  until somebody edits Wikidata. The success screen says so.
+* The `P18` claim is added on a **best-effort** basis after the upload. If the Wikidata edit is
+  rejected (no Wikidata session, missing “Create, edit, and move pages” right, or a network error),
+  the file still stays on Commons and the success screen says that the point can return after a
+  refresh. A Wikidata failure never rolls back the Commons upload.
 * One file at a time, direct upload (no chunked stash/resume); photos are compressed to ≤ 4096 px.
 * No duplicate-image SHA checks, title blacklist, depicts/captions, category search, multiple
   files, offline cache or background WorkManager upload.
@@ -198,6 +204,7 @@ User-Agent for osmdroid and should not be used for bulk tile downloads.
 * Map tiles: © OpenStreetMap contributors, ODbL.
 * Uploaded photos: the licence chosen by the uploader (CC BY-SA 4.0 by default).
 * Upload endpoint: `https://commons.wikimedia.org/w/api.php`.
+* Wikidata API: `https://www.wikidata.org/w/api.php` (the `P18` claim after upload).
 
 ## Credits
 

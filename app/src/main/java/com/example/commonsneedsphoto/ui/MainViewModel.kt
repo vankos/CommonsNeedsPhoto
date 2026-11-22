@@ -12,6 +12,7 @@ import com.example.commonsneedsphoto.data.model.NearbyPlace
 import com.example.commonsneedsphoto.data.model.distanceMeters
 import com.example.commonsneedsphoto.data.network.CommonsApiException
 import com.example.commonsneedsphoto.data.network.UploadedFile
+import com.example.commonsneedsphoto.data.network.WikidataApiException
 import com.example.commonsneedsphoto.data.photo.PhotoProcessor
 import com.example.commonsneedsphoto.data.upload.CommonsFileName
 import com.example.commonsneedsphoto.data.upload.UploadLicense
@@ -49,6 +50,9 @@ data class UploadUiState(
     val progress: Int = 0,
     val error: String? = null,
     val uploaded: UploadedFile? = null,
+    val isUpdatingWikidata: Boolean = false,
+    val wikidataUpdated: Boolean? = null,
+    val wikidataError: String? = null,
 )
 
 data class LoginUiState(
@@ -220,10 +224,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun dismissUpload() {
-        if (_state.value.upload?.isUploading == true) return
-        uploadJob?.cancel()
-        val photo = _state.value.upload?.photo
-        photo?.delete()
+        val current = _state.value.upload ?: return
+        if (current.isUploading) return
+        if (!current.isUpdatingWikidata) {
+            uploadJob?.cancel()
+        }
+        current.photo?.delete()
         _state.update { it.copy(upload = null) }
     }
 
@@ -404,8 +410,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             progress = 100,
                             uploaded = result,
                             fileName = result.fileName,
+                            isUpdatingWikidata = true,
+                            wikidataUpdated = null,
+                            wikidataError = null,
                         ),
                         places = it.places.filterNot { place -> place.qid == upload.place.qid },
+                    )
+                }
+                val p18Result = try {
+                    Result.success(
+                        container.wikidataApi.addImageClaim(upload.place.qid, result.fileName),
+                    )
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (exception: Exception) {
+                    Result.failure(exception)
+                }
+                _state.update {
+                    it.copy(
+                        upload = it.upload?.copy(
+                            isUpdatingWikidata = false,
+                            wikidataUpdated = p18Result.isSuccess,
+                            wikidataError = p18Result.exceptionOrNull()?.let { error ->
+                                p18ErrorMessage(error)
+                            },
+                        ),
                     )
                 }
             } catch (cancel: CancellationException) {
@@ -442,6 +471,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dismissError() {
         _state.update { it.copy(error = null) }
+    }
+
+    private fun p18ErrorMessage(exception: Throwable): String {
+        val code = (exception as? WikidataApiException)?.code
+        return when (code) {
+            "assertuserfailed", "notloggedin" ->
+                app.getString(R.string.wikidata_not_logged_in)
+            "permissiondenied", "badaccess-groups" ->
+                app.getString(R.string.wikidata_no_permission)
+            else -> exception.message ?: exception.javaClass.simpleName
+        }
     }
 
     private fun setUploadError(resource: Int) {

@@ -51,7 +51,12 @@
     <string name="upload_uploading">Загрузка… %1$d%%</string>
     <string name="upload_uploading_indeterminate">Загрузка…</string>
     <string name="upload_success_title">Фото загружено</string>
-    <string name="upload_success_text">Место исчезнет с карты, когда у его элемента Викиданных появится изображение.</string>
+    <string name="upload_success_text">Файл теперь на Викискладе (Wikimedia Commons).</string>
+    <string name="wikidata_updating">Добавляем изображение в Викиданные…</string>
+    <string name="wikidata_updated">Викиданные обновлены: изображение записано в P18, поэтому место не вернётся при следующем поиске.</string>
+    <string name="wikidata_failed">Фото загружено на Commons, но Викиданные не обновились: %1$s. Место может вернуться после обновления карты.</string>
+    <string name="wikidata_not_logged_in">сессия Викиданных не принята. Войдите в аккаунт, который может редактировать Викиданные, или добавьте паролю бота право «Create, edit, and move pages».</string>
+    <string name="wikidata_no_permission">аккаунту не разрешено редактировать Викиданные. Проверьте права или добавьте паролю бота право «Create, edit, and move pages».</string>
     <string name="open_file_page">Открыть страницу файла</string>
     <string name="done">Готово</string>
     <string name="cancel">Отмена</string>
@@ -67,7 +72,7 @@
     <string name="login">Войти</string>
     <string name="logout">Выйти</string>
     <string name="login_title">Вход в Wikimedia Commons</string>
-    <string name="login_explanation">Войдите в свой аккаунт Викимедиа. Если включена двухфакторная аутентификация (или вы не хотите вводить обычный пароль в это приложение), создайте пароль бота на Special:BotPasswords, включите право «Upload new files» и войдите как имя@бот. Пароль используется один раз — приложение хранит только cookie сессии.</string>
+    <string name="login_explanation">Войдите в свой аккаунт Викимедиа. Если включена двухфакторная аутентификация (или вы не хотите вводить обычный пароль в это приложение), создайте пароль бота на Special:BotPasswords, включите права «Upload new files» и «Create, edit, and move pages» (второе — для автоматического обновления P18 в Викиданных), и войдите как имя@бот. Пароль используется один раз — приложение хранит только cookie сессии.</string>
     <string name="login_open_bot_passwords">Открыть Special:BotPasswords</string>
     <string name="username">Имя участника</string>
     <string name="login_name_hint">Имя или имя@бот</string>

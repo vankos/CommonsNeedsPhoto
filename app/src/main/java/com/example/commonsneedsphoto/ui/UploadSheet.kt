@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -513,11 +514,48 @@ private fun UploadSuccessContent(
                 style = MaterialTheme.typography.labelLarge,
             )
         }
+        Spacer(Modifier.height(10.dp))
+        when {
+            state.isUpdatingWikidata -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(Modifier.size(8.dp))
+                    Text(
+                        text = stringResource(R.string.wikidata_updating),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            state.wikidataUpdated == true -> {
+                Text(
+                    text = stringResource(R.string.wikidata_updated),
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            state.wikidataError != null -> {
+                Text(
+                    text = stringResource(R.string.wikidata_failed, state.wikidataError),
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
         Spacer(Modifier.height(20.dp))
         Button(onClick = onOpenFile, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.open_file_page))
         }
-        TextButton(onClick = onDone, modifier = Modifier.fillMaxWidth()) {
+        TextButton(
+            onClick = onDone,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !state.isUpdatingWikidata,
+        ) {
             Text(stringResource(R.string.done))
         }
     }

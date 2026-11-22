@@ -49,7 +49,12 @@
     <string name="upload_uploading">Uploading… %1$d%%</string>
     <string name="upload_uploading_indeterminate">Uploading…</string>
     <string name="upload_success_title">Photo uploaded</string>
-    <string name="upload_success_text">The place will stop showing on the map after its Wikidata item gets the image property.</string>
+    <string name="upload_success_text">The file is now on Wikimedia Commons.</string>
+    <string name="wikidata_updating">Adding the image to Wikidata…</string>
+    <string name="wikidata_updated">Wikidata updated: the image is set as P18, so the place will not return in the next search.</string>
+    <string name="wikidata_failed">The photo is on Commons, but Wikidata was not updated: %1$s. The place may return after refreshing the map.</string>
+    <string name="wikidata_not_logged_in">the Wikidata session was not accepted. Log in with an account that can edit Wikidata, or add the “Create, edit, and move pages” grant to your bot password.</string>
+    <string name="wikidata_no_permission">your account is not allowed to edit Wikidata. Check the user rights or add the “Create, edit, and move pages” grant to your bot password.</string>
     <string name="open_file_page">Open file page</string>
     <string name="done">Done</string>
     <string name="cancel">Cancel</string>
@@ -65,7 +70,7 @@
     <string name="login">Log in</string>
     <string name="logout">Log out</string>
     <string name="login_title">Log in to Wikimedia Commons</string>
-    <string name="login_explanation">Log in with your Wikimedia Commons account. If your account uses two-factor authentication (or you prefer not to give this app your normal password), create a bot password at Special:BotPasswords, grant “Upload new files”, and log in as name@bot. The password is only used once — the app keeps the session cookie, not the password.</string>
+    <string name="login_explanation">Log in with your Wikimedia Commons account. If your account uses two-factor authentication (or you prefer not to give this app your normal password), create a bot password at Special:BotPasswords, grant “Upload new files” and “Create, edit, and move pages” (the second grant is for the automatic Wikidata P18 update), and log in as name@bot. The password is only used once — the app keeps the session cookie, not the password.</string>
     <string name="login_open_bot_passwords">Open Special:BotPasswords</string>
     <string name="username">Username</string>
     <string name="login_name_hint">Name or name@bot</string>

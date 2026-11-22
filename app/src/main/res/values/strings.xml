@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Commons needs photo</string>
+
+    <string name="map_title">Places without a photo</string>
+    <plurals name="nearby_count">
+        <item quantity="one">%1$d place without a photo</item>
+        <item quantity="other">%1$d places without a photo</item>
+    </plurals>
+    <string name="nearby_loading">Looking for places without a photo…</string>
+    <string name="locating">Locating…</string>
+    <string name="nearby_empty">No places without a photo found here. Try another area.</string>
+    <string name="nearby_error">Could not load places: %1$s</string>
+    <string name="search_this_area">Search this area</string>
+    <string name="my_location">My location</string>
+    <string name="refresh">Refresh</string>
+    <string name="retry">Retry</string>
+    <string name="map_attribution">© OpenStreetMap contributors</string>
+    <string name="map_intro">Find Wikidata places around you that still need a photo on Commons.</string>
+
+    <string name="location_permission_title">Location access</string>
+    <string name="location_permission_text">Allow location access so the map can show places without a photo around you. Without it, move the map and tap “Search this area”.</string>
+    <string name="location_permission_grant">Allow</string>
+    <string name="location_permission_denied">Location access denied. You can still search any area on the map.</string>
+    <string name="location_unavailable">Could not get your location. Move the map and tap “Search this area”.</string>
+
+    <string name="place_no_photo">No photo on Commons yet</string>
+    <string name="place_distance">%1$s away</string>
+    <string name="place_open_wikidata">Wikidata item</string>
+    <string name="place_instance_of">Instance of: %1$s</string>
+
+    <string name="upload_title">Upload a photo</string>
+    <string name="upload_photo_hint">Take a photo of this place or choose one from your gallery.</string>
+    <string name="take_photo">Take photo</string>
+    <string name="choose_gallery">Choose from gallery</string>
+    <string name="replace_photo">Replace photo</string>
+    <string name="remove_photo">Remove</string>
+    <string name="photo_preview">Photo preview</string>
+    <string name="file_name">File name</string>
+    <string name="description">Description</string>
+    <string name="category_optional">Category on Commons (optional)</string>
+    <string name="license_agreement">I took this photo and agree to publish it under the licence selected above.</string>
+    <string name="license_note">Wikimedia Commons only accepts freely licensed files.</string>
+    <string name="license_label">Licence</string>
+    <string name="license_cc_by_sa_4">CC BY-SA 4.0</string>
+    <string name="license_cc_by_4">CC BY 4.0</string>
+    <string name="license_cc0">CC0</string>
+    <string name="upload_button">Upload to Commons</string>
+    <string name="upload_uploading">Uploading… %1$d%%</string>
+    <string name="upload_uploading_indeterminate">Uploading…</string>
+    <string name="upload_success_title">Photo uploaded</string>
+    <string name="upload_success_text">The place will stop showing on the map after its Wikidata item gets the image property.</string>
+    <string name="open_file_page">Open file page</string>
+    <string name="done">Done</string>
+    <string name="cancel">Cancel</string>
+    <string name="close">Close</string>
+    <string name="upload_failed">Upload failed: %1$s</string>
+    <string name="upload_network_error">Network error: %1$s</string>
+    <string name="preparing_photo">Preparing photo…</string>
+    <string name="upload_missing_file">Choose a photo first.</string>
+    <string name="upload_missing_name">Enter a file name.</string>
+    <string name="upload_missing_license">Please confirm the licence to continue.</string>
+
+    <string name="account">Account</string>
+    <string name="login">Log in</string>
+    <string name="logout">Log out</string>
+    <string name="login_title">Log in to Wikimedia Commons</string>
+    <string name="login_explanation">Uploads use a Wikimedia bot password. Create one in a browser at Special:BotPasswords, grant “Upload new files”, then log in here as name@bot with the generated password. The login name is your username, then @, then the bot name. The password is only used once — the app keeps the session cookie, not the password.</string>
+    <string name="login_open_bot_passwords">Open Special:BotPasswords</string>
+    <string name="username">Username</string>
+    <string name="bot_password">Bot password</string>
+    <string name="login_action">Log in</string>
+    <string name="login_in_progress">Logging in…</string>
+    <string name="login_failed">Login failed: %1$s</string>
+    <string name="login_empty_fields">Enter the bot login and the generated password.</string>
+    <string name="login_required">Log in to upload photos.</string>
+    <string name="logged_in_as">Logged in as %1$s</string>
+    <string name="not_logged_in">Not logged in</string>
+    <string name="login_session_expired">Your Commons session has expired. Log in again.</string>
+    <string name="privacy_note">This app is an unofficial MVP and is not affiliated with Wikimedia Commons.</string>
+
+    <string name="camera_error">Could not start the camera: %1$s</string>
+    <string name="photo_error">Could not read the photo: %1$s</string>
+</resources>

@@ -51,6 +51,50 @@ class CommonsApi(
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun login(loginName: String, password: String): String = withContext(Dispatchers.IO) {
+        if (loginName.trim().contains('@')) {
+            loginWithBotPassword(loginName, password)
+        } else {
+            loginWithAccount(loginName, password)
+        }
+    }
+
+    private fun loginWithAccount(loginName: String, password: String): String {
+        val token = fetchToken("login")
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("action", "clientlogin")
+            .addFormDataPart("format", "json")
+            .addFormDataPart("formatversion", "2")
+            .addFormDataPart("username", loginName.trim())
+            .addFormDataPart("password", password)
+            .addFormDataPart("logintoken", token)
+            .addFormDataPart("loginreturnurl", "https://commons.wikimedia.org/")
+            .addFormDataPart("uselang", "en")
+            .build()
+        val root = execute(body)
+        val clientlogin = root["clientlogin"]?.jsonObject
+            ?: throw CommonsApiException("login-failed", root.errorText() ?: "Login failed")
+        return when (clientlogin.string("status")) {
+            "PASS" -> {
+                val name = clientlogin.string("username") ?: loginName.trim()
+                session.userName = name
+                name
+            }
+            "UI" -> throw CommonsApiException(
+                "login-verification",
+                "This account requires additional verification (two-factor authentication or a CAPTCHA). " +
+                    "Please create a bot password and log in as name@bot instead.",
+            )
+            else -> throw CommonsApiException(
+                "login-failed",
+                clientlogin.string("reason")
+                    ?: clientlogin.string("message")
+                    ?: "Wrong username or password",
+            )
+        }
+    }
+
+    private fun loginWithBotPassword(loginName: String, password: String): String {
         val token = fetchToken("login")
         val body = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
@@ -64,7 +108,7 @@ class CommonsApi(
         val root = execute(body)
         val login = root["login"]?.jsonObject
             ?: throw CommonsApiException("login-failed", root.errorText() ?: "Login failed")
-        when (login.string("result")) {
+        return when (login.string("result")) {
             "Success" -> {
                 val name = login.string("lgusername") ?: loginName.substringBefore('@')
                 session.userName = name
@@ -72,7 +116,9 @@ class CommonsApi(
             }
             else -> throw CommonsApiException(
                 "login-failed",
-                login.string("reason") ?: "Wrong username or bot password",
+                login.string("reason")
+                    ?: login.string("message")
+                    ?: "Wrong username or bot password",
             )
         }
     }

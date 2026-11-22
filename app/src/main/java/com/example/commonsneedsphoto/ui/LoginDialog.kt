@@ -60,7 +60,7 @@ fun LoginDialog(
                     onValueChange = { loginName = it },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text(stringResource(R.string.username)) },
-                    placeholder = { Text("name@bot") },
+                    placeholder = { Text(stringResource(R.string.login_name_hint)) },
                     singleLine = true,
                     enabled = !state.isLoggingIn,
                 )

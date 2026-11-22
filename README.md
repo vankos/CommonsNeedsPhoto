@@ -62,23 +62,27 @@ GitHub release. Signing needs `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS
 
 ## Logging in to upload
 
-Commons uploads require an account. This MVP uses a **Wikimedia bot password** instead of asking
-for your normal wiki password:
+Commons uploads require an account. The app supports two ways to sign in:
 
-1. Open <https://commons.wikimedia.org/wiki/Special:BotPasswords> in a browser and log in.
-2. Create a bot password, e.g. `phone`, and grant **Upload new files** (and **Upload, replace, and
-   move files** if you want to replace files).
-3. Note the generated login name `YourUsername@phone` and the one-time password.
-4. In the app tap the account icon (or “Log in” in the upload sheet), enter
-   `YourUsername@phone` and the generated password.
+1. **Regular Wikimedia account.** Enter your username and password. This uses the same
+   `action=clientlogin` API as the original Commons app. If the account uses two-factor
+   authentication or Commons asks for a CAPTCHA, the app tells you to use a bot password instead.
+2. **Wikimedia bot password** (recommended for 2FA, and if you do not want to type your normal
+   password into a third-party app):
+   1. Open <https://commons.wikimedia.org/wiki/Special:BotPasswords> in a browser and log in.
+   2. Create a bot password, e.g. `phone`, and grant **Upload new files** (and **Upload, replace,
+      and move files** if you want to replace files).
+   3. Note the generated login name `YourUsername@phone` and the one-time password.
+   4. In the app tap the account icon (or “Log in” in the upload sheet), enter
+      `YourUsername@phone` and the generated password.
 
 The app does **not** store the password. It keeps only the Commons session cookies in an
 app-private preference file (`commons_session`) which is excluded from Android backups. When the
 session expires, log in again.
 
-The original Commons app signs in with `action=clientlogin` and the regular account. A bot password
-was chosen for the MVP because it works without storing a real password, bypasses two-factor
-authentication, and is the recommended way for tools to authenticate against the MediaWiki API.
+The original Commons app signs in with `action=clientlogin` and stores the account in Android's
+`AccountManager`; this MVP deliberately keeps only the cookies. Bot passwords are the fallback for
+accounts with two-factor authentication.
 
 ## How the code is organised
 

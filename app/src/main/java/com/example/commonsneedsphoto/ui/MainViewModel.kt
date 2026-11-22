@@ -115,14 +115,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    fun onLocationPermissionResult(granted: Boolean) {
+    fun onLocationPermissionResult(granted: Boolean, searchAfter: Boolean = true) {
         prefs.edit().putBoolean(KEY_PERMISSION_ASKED, true).apply()
         _state.update { it.copy(shouldRequestLocationPermission = false) }
         if (granted) {
-            locate(searchAfter = true)
+            locate(searchAfter = searchAfter)
         } else {
             _state.update { it.copy(message = app.getString(R.string.location_permission_denied)) }
-            if (!_state.value.hasSearched) {
+            if (searchAfter && !_state.value.hasSearched) {
                 searchHere(_state.value.mapCenter, INITIAL_RADIUS_KM)
             }
         }

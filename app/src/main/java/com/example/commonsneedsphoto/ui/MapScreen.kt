@@ -93,6 +93,7 @@ fun MapScreen(viewModel: MainViewModel) {
     val snackbarHostState = remember { SnackbarHostState() }
     var hasLocationPermission by remember { mutableStateOf(hasLocationPermission(context)) }
     var showPermissionRationale by rememberSaveable { mutableStateOf(false) }
+    var permissionForLocateOnly by remember { mutableStateOf(false) }
     var showAccountDialog by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -102,7 +103,11 @@ fun MapScreen(viewModel: MainViewModel) {
             result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         hasLocationPermission = granted
         showPermissionRationale = false
-        viewModel.onLocationPermissionResult(granted)
+        viewModel.onLocationPermissionResult(
+            granted = granted,
+            searchAfter = !permissionForLocateOnly,
+        )
+        permissionForLocateOnly = false
     }
 
     LaunchedEffect(state.shouldRequestLocationPermission) {
@@ -160,8 +165,9 @@ fun MapScreen(viewModel: MainViewModel) {
             FloatingActionButton(
                 onClick = {
                     if (hasLocationPermission) {
-                        viewModel.locate()
+                        viewModel.locate(searchAfter = false)
                     } else {
+                        permissionForLocateOnly = true
                         permissionLauncher.launch(
                             arrayOf(
                                 Manifest.permission.ACCESS_FINE_LOCATION,
@@ -292,6 +298,7 @@ fun MapScreen(viewModel: MainViewModel) {
             confirmButton = {
                 Button(
                     onClick = {
+                        permissionForLocateOnly = false
                         permissionLauncher.launch(
                             arrayOf(
                                 Manifest.permission.ACCESS_FINE_LOCATION,

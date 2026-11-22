@@ -27,14 +27,22 @@ flows are implemented — there are no Explore/Bookmarks/Contributions tabs.
   * edit the Commons file name, description and category (prefilled from Wikidata `P373`);
   * choose a licence (CC BY-SA 4.0, CC BY 4.0 or CC0);
   * upload the file to Wikimedia Commons.
-* **Real Commons upload.** The upload uses the MediaWiki API directly:
-  `action=query&meta=tokens&type=csrf` → `action=upload` with a multipart file and a
-  `{{Information}}` / `{{Location}}` / `{{self|cc-by-sa-4.0}}` wikitext page. The file name is
-  checked against Commons and a random suffix is appended if it already exists, so files are not
-  overwritten. After the upload the app adds the file to the Wikidata item as the **P18** (image)
-  claim — that is what keeps the point out of the next search. The Wikidata edit is best effort: a
-  failure there never undoes the Commons upload, and the success screen explains that the point may
-  return.
+* **Real Commons upload, in 512 KB chunks.** The upload uses the MediaWiki API directly:
+  `action=query&meta=tokens&type=csrf` → `action=upload&stash=1&ignorewarnings=1` for every
+  512 KB chunk → `action=upload` with the returned `filekey` to publish the finished stash and a
+  `{{Information}}` / `{{Location}}` / `{{self|cc-by-sa-4.0}}` wikitext page. The `filekey` and
+  the accepted byte offset are saved after every chunk, so a retry continues the stash instead
+  of starting from zero. The file name is checked against Commons and a random suffix is
+  appended if it already exists, so files are not overwritten. After the upload the app adds the
+  file to the Wikidata item as the **P18** (image) claim — that is what keeps the point out of
+  the next search. The Wikidata edit is best effort: a failure there never undoes the Commons
+  upload, and the success screen explains that the point may return.
+* **Background upload with WorkManager.** The upload sheet enqueues a `CoroutineWorker` with a
+  “network connected” constraint and observes its `WorkInfo`, so the sheet shows chunk progress,
+  the publishing step, success, failure and the P18 result. The work runs in a `dataSync`
+  foreground service with a progress notification, survives screen rotation and app restarts,
+  retries network/server errors with exponential backoff, and turns an expired Commons session
+  into a clear “log in again” message instead of a generic failure.
 * **Photo pipeline.** The selected image is decoded, oriented from EXIF, scaled to at most 4096 px,
   saved as JPEG (quality 92), and the camera EXIF is copied. If the photo has no GPS, the place
   coordinates are written into EXIF.
@@ -134,13 +142,22 @@ app/src/main/java/com/example/commonsneedsphoto/
 │   ├── model/                     NearbyPlace, LatLon, haversine distance
 │   ├── network/
 │   │   ├── WikidataNearbyRepository.kt  SPARQL query + kotlinx.serialization parser
-│   │   ├── CommonsApi.kt               login, CSRF, unique file name, multipart upload
+│   │   ├── CommonsApi.kt               login, CSRF, unique name, chunk stash + publish
 │   │   ├── WikidataApi.kt              P18 claim after upload (best effort)
 │   │   ├── CommonsSession.kt           persistent OkHttp CookieJar
 │   │   └── Network.kt                  shared OkHttp client and User-Agent
-│   ├── photo/PhotoProcessor.kt    EXIF rotation, resize, JPEG, geotagging
+│   ├── photo/PhotoProcessor.kt    EXIF rotation, resize, JPEG, geotagging, stale-file cleanup
 │   ├── location/LocationProvider.kt    one-shot LocationManager fix
-│   └── upload/                    wikitext builder, file-name rules, licence enum
+│   └── upload/
+│       ├── UploadChunks.kt        512 KB chunk plan, offsets, 6 h stash lifetime
+│       ├── UploadResume.kt        filekey + offset, published-but-P18-pending marker
+│       ├── ChunkedUploader.kt     stash/resume/publish orchestration
+│       ├── UploadWorker.kt        WorkManager worker, foreground notification, P18
+│       ├── UploadWork.kt          request, input/output keys, WorkInfo observation
+│       ├── UploadNotifications.kt progress and result notifications
+│       ├── UploadErrors.kt        session/permanent/retry classification
+│       ├── WikitextBuilder.kt     {{Information}} page and file-name rules
+│       └── UploadLicense.kt       licence enum and templates
 └── ui/
     ├── MainViewModel.kt           screen state, search, login, upload orchestration
     ├── MapScreen.kt               osmdroid map, clustered canvas overlay, permission flow
@@ -150,8 +167,38 @@ app/src/main/java/com/example/commonsneedsphoto/
 ```
 
 Dependencies are intentionally small: **Jetpack Compose (Material 3)**, **osmdroid** for the map,
-**OkHttp** for HTTP, **kotlinx.serialization** for JSON and **Coil** for the photo preview. There is
-no DI framework, database or navigation library — the MVP is a single screen plus two dialogs.
+**OkHttp** for HTTP, **kotlinx.serialization** for JSON, **Coil** for the photo preview and
+**WorkManager** (`work-runtime-ktx`) for background uploads. There is no DI framework, database or
+navigation library — the MVP is a single screen plus two dialogs.
+
+### Background uploads
+
+A photo upload is a WorkManager request built in `UploadWork.enqueue`. The sheet starts it with
+`viewModel.upload()` and then collects the work's `WorkInfo`, so the same progress survives
+rotation and is shown again when the user returns to the screen.
+
+1. The worker runs only when the phone has a network (`NetworkType.CONNECTED`). Network and server
+   (5xx, 429) failures are retried up to three times with exponential backoff starting at 30
+   seconds.
+2. `ChunkedUploader` asks for a CSRF token, resolves a single unique file name and sends the JPEG
+   in 512 KB chunks. After each chunk the returned `filekey` and byte offset are written
+   synchronously to the private `upload_resume` preferences, so a retry after process death or a
+   WorkManager backoff continues the stash instead of starting from zero. The state is cleared on
+   success and after fatal stash errors (`stashfailed`, `verification-error`,
+   `uploadstash-file-not-found`, `chunk-too-small`, …).
+3. The completed stash is published with `action=upload&ignorewarnings=1`. Only then is the local
+   JPEG deleted.
+4. `WikidataApi.addImageClaim` sets P18 from the published title (underscores converted back to
+   spaces). The published result is saved before that step, so a worker stopped between the
+   Commons upload and the Wikidata edit resumes at P18 instead of uploading a duplicate file. A
+   Wikidata failure is reported in the sheet and in the result notification, but the work still
+   succeeds because the file is already on Commons.
+
+The foreground notification uses the `dataSync` type; Android 13+ asks for `POST_NOTIFICATIONS`
+when Upload is tapped. If the permission is denied the upload still runs, but progress is visible
+only inside the app. A session error (`assertuserfailed`, `mustbeloggedin`, `notloggedin`,
+`badtoken`) clears the saved cookies, fails the work and shows “session expired”; after logging in
+again the same upload resumes from the saved stash position.
 
 ### Nearby query
 
@@ -200,9 +247,18 @@ User-Agent for osmdroid and should not be used for bulk tile downloads.
   rejected (no Wikidata session, missing “Create, edit, and move pages” right, or a network error),
   the file still stays on Commons and the success screen says that the point can return after a
   refresh. A Wikidata failure never rolls back the Commons upload.
-* One file at a time, direct upload (no chunked stash/resume); photos are compressed to ≤ 4096 px.
+* One photo at a time and one active upload. There is no contributions queue: closing the sheet
+  while the work is still waiting for a network connection cancels it; once chunking has started
+  the sheet cannot be closed, and closing the app leaves the work running with its notification.
+* Chunk resume is tied to the processed JPEG and to MediaWiki's six-hour upload-stash lifetime
+  (`$wgUploadStashMaxAge`). A retry after that, or after changing the photo or file name, starts
+  the stash again. WorkManager may also delay a retry while the phone is in Doze or low on battery.
+* Android 13+ needs the notification permission for the progress notification; without it the
+  upload still runs, but progress is visible only inside the app. The Android 14+ `dataSync`
+  foreground-service permission is declared in the manifest.
+* Photos are compressed to ≤ 4096 px.
 * No duplicate-image SHA checks, title blacklist, depicts/captions, category search, multiple
-  files, offline cache or background WorkManager upload.
+  files or offline cache of the map.
 * The query returns every kind of Wikidata item with coordinates (including businesses and
   streets), exactly like the raw query. There is no “only attractions” filter.
 * The app is an unofficial MVP and is not affiliated with Wikimedia Commons.

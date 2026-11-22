@@ -1,5 +1,8 @@
 package com.example.commonsneedsphoto.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -49,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -56,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.example.commonsneedsphoto.R
 import com.example.commonsneedsphoto.data.model.LatLon
@@ -73,6 +78,7 @@ fun UploadSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
     var showPhotoActions by remember { mutableStateOf(false) }
 
     val galleryLauncher = rememberLauncherForActivityResult(
@@ -85,9 +91,29 @@ fun UploadSheet(
     ) { success ->
         viewModel.onCameraResult(success)
     }
+    // Android 13+ needs POST_NOTIFICATIONS for the WorkManager progress notification.
+    // The upload runs even when the permission is denied; only the notification is hidden.
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        viewModel.upload()
+    }
+    val startUpload = {
+        val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) != PackageManager.PERMISSION_GRANTED
+        if (needsPermission) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            viewModel.upload()
+        }
+    }
+    val canDismiss = !state.isUploading || state.isWaitingForNetwork
 
     ModalBottomSheet(
-        onDismissRequest = { if (!state.isUploading) viewModel.dismissUpload() },
+        onDismissRequest = { if (canDismiss) viewModel.dismissUpload() },
         sheetState = sheetState,
         dragHandle = { BottomSheetDefaults.DragHandle() },
     ) {
@@ -177,7 +203,7 @@ fun UploadSheet(
                 }
                 IconButton(
                     onClick = viewModel::dismissUpload,
-                    enabled = !state.isUploading,
+                    enabled = canDismiss,
                 ) {
                     Icon(
                         Icons.Filled.Close,
@@ -341,25 +367,47 @@ fun UploadSheet(
             }
 
             if (state.isUploading) {
-                LinearProgressIndicator(
-                    progress = { state.progress / 100f },
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (state.isWaitingForNetwork) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = stringResource(R.string.upload_waiting_network),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    LinearProgressIndicator(
+                        progress = { state.progress / 100f },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (state.isPublishing) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = stringResource(R.string.upload_publishing),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
                 Spacer(Modifier.height(6.dp))
             }
 
             Button(
-                onClick = viewModel::upload,
+                onClick = startUpload,
                 enabled = !state.isUploading && !state.isPreparingPhoto,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
             ) {
                 Text(
-                    text = if (state.isUploading) {
-                        stringResource(R.string.upload_uploading, state.progress)
-                    } else {
-                        stringResource(R.string.upload_button)
+                    text = when {
+                        state.isUploading && state.isPublishing ->
+                            stringResource(R.string.upload_publishing)
+                        state.isUploading && state.isWaitingForNetwork ->
+                            stringResource(R.string.upload_uploading_indeterminate)
+                        state.isUploading ->
+                            stringResource(R.string.upload_uploading, state.progress)
+                        else -> stringResource(R.string.upload_button)
                     },
                 )
             }

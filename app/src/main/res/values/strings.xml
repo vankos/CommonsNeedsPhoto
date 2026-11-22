@@ -60,6 +60,11 @@
     <string name="cancel">Cancel</string>
     <string name="close">Close</string>
     <string name="upload_failed">Upload failed: %1$s</string>
+    <string name="upload_failed_unknown">unknown error</string>
+    <string name="upload_network_retries_failed">The upload did not finish after several attempts. Check your connection and try again.</string>
+    <string name="upload_cancelled">Upload cancelled.</string>
+    <string name="upload_waiting_network">Waiting for a network connection…</string>
+    <string name="upload_publishing">Publishing the file on Commons…</string>
     <string name="upload_network_error">Network error: %1$s</string>
     <string name="preparing_photo">Preparing photo…</string>
     <string name="upload_missing_file">Choose a photo first.</string>
@@ -95,4 +100,19 @@
 
     <string name="camera_error">Could not start the camera: %1$s</string>
     <string name="photo_error">Could not read the photo: %1$s</string>
+
+    <string name="upload_channel_name">Photo uploads</string>
+    <string name="upload_channel_description">Progress of photo uploads to Wikimedia Commons</string>
+    <string name="upload_notification_generic_title">Photo upload</string>
+    <string name="upload_notification_title">Uploading %1$s</string>
+    <string name="upload_notification_progress">Uploading… %1$d%%</string>
+    <string name="upload_notification_publishing">Publishing the file on Commons…</string>
+    <string name="upload_notification_wikidata">Adding the image to Wikidata…</string>
+    <string name="upload_notification_waiting">Waiting for a network connection…</string>
+    <string name="upload_notification_success_title">Photo uploaded</string>
+    <string name="upload_notification_success_text">%1$s is now on Wikimedia Commons.</string>
+    <string name="upload_notification_success_p18_failed">%1$s was uploaded, but Wikidata was not updated.</string>
+    <string name="upload_notification_failed_title">Upload failed</string>
+    <string name="upload_notification_failed_text">%1$s</string>
+    <string name="upload_notification_session_expired">Your Commons session has expired. Open the app and log in again.</string>
 </resources>

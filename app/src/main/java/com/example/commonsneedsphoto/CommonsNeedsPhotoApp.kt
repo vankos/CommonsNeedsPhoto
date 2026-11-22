@@ -8,6 +8,9 @@ import com.example.commonsneedsphoto.data.network.Network
 import com.example.commonsneedsphoto.data.network.WikidataApi
 import com.example.commonsneedsphoto.data.network.WikidataNearbyRepository
 import com.example.commonsneedsphoto.data.photo.PhotoProcessor
+import com.example.commonsneedsphoto.data.upload.ChunkedUploader
+import com.example.commonsneedsphoto.data.upload.UploadNotifications
+import com.example.commonsneedsphoto.data.upload.UploadResumeStore
 import org.osmdroid.config.Configuration
 import java.io.File
 
@@ -17,6 +20,8 @@ class AppContainer(application: Application) {
     val wikidataApi = WikidataApi(session)
     val nearbyRepository = WikidataNearbyRepository()
     val locationProvider = LocationProvider(application)
+    val uploadResumeStore = UploadResumeStore(application)
+    val chunkedUploader = ChunkedUploader(commonsApi, uploadResumeStore)
 }
 
 class CommonsNeedsPhotoApp : Application() {
@@ -28,7 +33,8 @@ class CommonsNeedsPhotoApp : Application() {
         super.onCreate()
         container = AppContainer(this)
         configureOsmdroid()
-        PhotoProcessor.clearCache(this)
+        UploadNotifications(this).ensureChannel()
+        PhotoProcessor.clearStaleFiles(this)
     }
 
     private fun configureOsmdroid() {

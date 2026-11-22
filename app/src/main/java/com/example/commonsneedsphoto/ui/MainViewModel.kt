@@ -4,18 +4,20 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.WorkInfo
 import com.example.commonsneedsphoto.CommonsNeedsPhotoApp
 import com.example.commonsneedsphoto.BuildConfig
 import com.example.commonsneedsphoto.R
 import com.example.commonsneedsphoto.data.model.LatLon
 import com.example.commonsneedsphoto.data.model.NearbyPlace
 import com.example.commonsneedsphoto.data.model.distanceMeters
-import com.example.commonsneedsphoto.data.network.CommonsApiException
 import com.example.commonsneedsphoto.data.network.UploadedFile
-import com.example.commonsneedsphoto.data.network.WikidataApiException
 import com.example.commonsneedsphoto.data.photo.PhotoProcessor
 import com.example.commonsneedsphoto.data.upload.CommonsFileName
 import com.example.commonsneedsphoto.data.upload.UploadLicense
+import com.example.commonsneedsphoto.data.upload.UploadResumeKey
+import com.example.commonsneedsphoto.data.upload.UploadSpec
+import com.example.commonsneedsphoto.data.upload.UploadWork
 import com.example.commonsneedsphoto.data.upload.WikitextBuilder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +29,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.UUID
 
 data class MapTarget(
     val id: Long,
@@ -47,7 +50,11 @@ data class UploadUiState(
     val photo: File? = null,
     val isPreparingPhoto: Boolean = false,
     val isUploading: Boolean = false,
+    val isWaitingForNetwork: Boolean = false,
+    val isPublishing: Boolean = false,
     val progress: Int = 0,
+    val workName: String? = null,
+    val resumeKey: String? = null,
     val error: String? = null,
     val uploaded: UploadedFile? = null,
     val isUpdatingWikidata: Boolean = false,
@@ -90,7 +97,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var searchJob: Job? = null
     private var locateJob: Job? = null
-    private var uploadJob: Job? = null
+    private var uploadObserverJob: Job? = null
     private var loginJob: Job? = null
     private var pendingCameraFile: File? = null
     private var targetId = 0L
@@ -225,10 +232,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dismissUpload() {
         val current = _state.value.upload ?: return
-        if (current.isUploading) return
-        if (!current.isUpdatingWikidata) {
-            uploadJob?.cancel()
+        if (current.isUploading && !current.isWaitingForNetwork) return
+        if (current.isUploading) {
+            // The work has not started yet; closing the sheet cancels the queued upload.
+            current.workName?.let { UploadWork.cancel(app, it) }
         }
+        uploadObserverJob?.cancel()
+        uploadObserverJob = null
         current.photo?.delete()
         _state.update { it.copy(upload = null) }
     }
@@ -386,78 +396,184 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             license = upload.license,
             appVersion = BuildConfig.VERSION_NAME,
         )
-        uploadJob?.cancel()
-        uploadJob = viewModelScope.launch {
+        val photo = upload.photo
+        val spec = UploadSpec(
+            file = photo,
+            fileName = fileName,
+            wikitext = wikitext,
+            comment = UPLOAD_COMMENT,
+            qid = upload.place.qid,
+            placeLabel = upload.place.label,
+            resumeKey = UploadResumeKey.of(upload.place.qid, photo),
+        )
+
+        uploadObserverJob?.cancel()
+        try {
+            val handle = UploadWork.enqueue(app, spec)
             _state.update {
-                it.copy(upload = it.upload?.copy(isUploading = true, progress = 0, error = null))
+                it.copy(
+                    upload = it.upload?.copy(
+                        isUploading = true,
+                        isWaitingForNetwork = true,
+                        isPublishing = false,
+                        progress = 0,
+                        workName = handle.uniqueName,
+                        resumeKey = spec.resumeKey,
+                        error = null,
+                    ),
+                )
             }
-            try {
-                val result = container.commonsApi.upload(
-                    file = upload.photo,
-                    fileName = fileName,
-                    wikitext = wikitext,
-                    comment = UPLOAD_COMMENT,
-                ) { uploaded, total ->
-                    val percent = if (total <= 0) 0 else ((uploaded * 100) / total).toInt()
-                    if (_state.value.upload?.progress != percent) {
-                        _state.update { it.copy(upload = it.upload?.copy(progress = percent)) }
+            observeUploadWork(handle.id)
+        } catch (exception: Exception) {
+            _state.update {
+                it.copy(
+                    upload = it.upload?.copy(
+                        isUploading = false,
+                        isWaitingForNetwork = false,
+                        error = app.getString(
+                            R.string.upload_failed,
+                            exception.message ?: exception.javaClass.simpleName,
+                        ),
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * Keeps the sheet in sync with the WorkManager request. The work itself runs outside
+     * the ViewModel, so rotation and process restarts do not interrupt the upload.
+     */
+    private fun observeUploadWork(id: UUID) {
+        uploadObserverJob?.cancel()
+        uploadObserverJob = viewModelScope.launch {
+            UploadWork.observe(app, id).collect { info ->
+                info?.let(::applyUploadWorkInfo)
+            }
+        }
+    }
+
+    private fun applyUploadWorkInfo(info: WorkInfo) {
+        when (info.state) {
+            WorkInfo.State.ENQUEUED,
+            WorkInfo.State.BLOCKED,
+            -> _state.update { state ->
+                val current = state.upload ?: return@update state
+                state.copy(
+                    upload = current.copy(
+                        isUploading = true,
+                        isWaitingForNetwork = true,
+                        isPublishing = false,
+                    ),
+                )
+            }
+
+            WorkInfo.State.RUNNING -> {
+                val progress = info.progress.getInt(UploadWork.KEY_PROGRESS, 0)
+                    .coerceIn(0, 100)
+                val phase = info.progress.getString(UploadWork.KEY_PHASE)
+                val uploadedName = info.progress.getString(UploadWork.KEY_UPLOADED_FILE_NAME)
+                val pageUrl = info.progress.getString(UploadWork.KEY_PAGE_URL)
+                val published = if (uploadedName != null && pageUrl != null) {
+                    UploadedFile(uploadedName, pageUrl)
+                } else {
+                    null
+                }
+                _state.update { state ->
+                    val current = state.upload ?: return@update state
+                    val result = published ?: current.uploaded
+                    state.copy(
+                        upload = current.copy(
+                            isUploading = true,
+                            isWaitingForNetwork = false,
+                            isPublishing = phase == UploadWork.PHASE_PUBLISH,
+                            isUpdatingWikidata = phase == UploadWork.PHASE_WIKIDATA,
+                            progress = progress,
+                            uploaded = result,
+                        ),
+                        places = if (published != null) {
+                            state.places.filterNot { it.qid == current.place.qid }
+                        } else {
+                            state.places
+                        },
+                    )
+                }
+            }
+
+            WorkInfo.State.SUCCEEDED -> {
+                val data = info.outputData
+                val uploadedName = data.getString(UploadWork.KEY_UPLOADED_FILE_NAME)
+                val pageUrl = data.getString(UploadWork.KEY_PAGE_URL)
+                val p18Updated = data.getBoolean(UploadWork.KEY_P18_UPDATED, false)
+                val p18Code = data.getString(UploadWork.KEY_P18_ERROR_CODE)
+                val p18Message = data.getString(UploadWork.KEY_P18_ERROR)
+                val published = if (uploadedName != null && pageUrl != null) {
+                    UploadedFile(uploadedName, pageUrl)
+                } else {
+                    null
+                }
+                _state.value.upload?.resumeKey?.let { resumeKey ->
+                    viewModelScope.launch(Dispatchers.IO) {
+                        container.uploadResumeStore.clearPublished(resumeKey)
                     }
                 }
-                _state.update {
-                    it.copy(
-                        upload = it.upload?.copy(
+                _state.update { state ->
+                    val current = state.upload ?: return@update state
+                    val result = published ?: current.uploaded
+                    state.copy(
+                        upload = current.copy(
                             isUploading = false,
+                            isWaitingForNetwork = false,
+                            isPublishing = false,
+                            isUpdatingWikidata = false,
                             progress = 100,
                             uploaded = result,
-                            fileName = result.fileName,
-                            isUpdatingWikidata = true,
-                            wikidataUpdated = null,
-                            wikidataError = null,
-                        ),
-                        places = it.places.filterNot { place -> place.qid == upload.place.qid },
-                    )
-                }
-                val p18Result = try {
-                    Result.success(
-                        container.wikidataApi.addImageClaim(upload.place.qid, result.fileName),
-                    )
-                } catch (cancel: CancellationException) {
-                    throw cancel
-                } catch (exception: Exception) {
-                    Result.failure(exception)
-                }
-                _state.update {
-                    it.copy(
-                        upload = it.upload?.copy(
-                            isUpdatingWikidata = false,
-                            wikidataUpdated = p18Result.isSuccess,
-                            wikidataError = p18Result.exceptionOrNull()?.let { error ->
-                                p18ErrorMessage(error)
+                            fileName = result?.fileName ?: current.fileName,
+                            wikidataUpdated = p18Updated,
+                            wikidataError = if (p18Updated) {
+                                null
+                            } else {
+                                p18ErrorMessage(p18Code, p18Message)
                             },
                         ),
+                        places = if (result != null) {
+                            state.places.filterNot { it.qid == current.place.qid }
+                        } else {
+                            state.places
+                        },
                     )
                 }
-            } catch (cancel: CancellationException) {
-                throw cancel
-            } catch (exception: Exception) {
-                val code = (exception as? CommonsApiException)?.code
-                val sessionExpired = code in SESSION_ERRORS
+            }
+
+            WorkInfo.State.FAILED,
+            WorkInfo.State.CANCELLED,
+            -> {
+                val kind = info.outputData.getString(UploadWork.KEY_ERROR_KIND)
+                val sessionExpired = kind == UploadWork.ERROR_KIND_SESSION
                 if (sessionExpired) {
                     container.session.clear()
                 }
-                _state.update {
-                    it.copy(
-                        userName = if (sessionExpired) null else it.userName,
-                        upload = it.upload?.copy(
+                val message = when {
+                    sessionExpired -> app.getString(R.string.login_session_expired)
+                    kind == UploadWork.ERROR_KIND_NETWORK ->
+                        app.getString(R.string.upload_network_retries_failed)
+                    info.state == WorkInfo.State.CANCELLED ->
+                        app.getString(R.string.upload_cancelled)
+                    else -> app.getString(
+                        R.string.upload_failed,
+                        info.outputData.getString(UploadWork.KEY_ERROR)
+                            ?: app.getString(R.string.upload_failed_unknown),
+                    )
+                }
+                _state.update { state ->
+                    state.copy(
+                        userName = if (sessionExpired) null else state.userName,
+                        upload = state.upload?.copy(
                             isUploading = false,
-                            error = if (sessionExpired) {
-                                app.getString(R.string.login_session_expired)
-                            } else {
-                                app.getString(
-                                    R.string.upload_failed,
-                                    exception.message ?: exception.javaClass.simpleName,
-                                )
-                            },
+                            isWaitingForNetwork = false,
+                            isPublishing = false,
+                            isUpdatingWikidata = false,
+                            error = message,
                         ),
                     )
                 }
@@ -473,15 +589,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(error = null) }
     }
 
-    private fun p18ErrorMessage(exception: Throwable): String {
-        val code = (exception as? WikidataApiException)?.code
-        return when (code) {
-            "assertuserfailed", "notloggedin" ->
-                app.getString(R.string.wikidata_not_logged_in)
-            "permissiondenied", "badaccess-groups" ->
-                app.getString(R.string.wikidata_no_permission)
-            else -> exception.message ?: exception.javaClass.simpleName
-        }
+    private fun p18ErrorMessage(code: String?, message: String?): String = when (code) {
+        "assertuserfailed", "mustbeloggedin", "notloggedin" ->
+            app.getString(R.string.wikidata_not_logged_in)
+        "permissiondenied", "badaccess-groups" ->
+            app.getString(R.string.wikidata_no_permission)
+        else -> message ?: app.getString(R.string.upload_failed_unknown)
     }
 
     private fun setUploadError(resource: Int) {
@@ -505,10 +618,5 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val KEY_LAST_LON = "last_lon"
         private const val KEY_PERMISSION_ASKED = "permission_asked"
         private const val UPLOAD_COMMENT = "Uploaded with the Commons needs photo MVP"
-        private val SESSION_ERRORS = setOf(
-            "assertuserfailed",
-            "mustbeloggedin",
-            "notloggedin",
-        )
     }
 }

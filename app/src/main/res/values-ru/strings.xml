@@ -62,6 +62,11 @@
     <string name="cancel">Отмена</string>
     <string name="close">Закрыть</string>
     <string name="upload_failed">Не удалось загрузить: %1$s</string>
+    <string name="upload_failed_unknown">неизвестная ошибка</string>
+    <string name="upload_network_retries_failed">Не удалось завершить загрузку после нескольких попыток. Проверьте соединение и повторите.</string>
+    <string name="upload_cancelled">Загрузка отменена.</string>
+    <string name="upload_waiting_network">Ожидаем подключение к сети…</string>
+    <string name="upload_publishing">Публикуем файл на Commons…</string>
     <string name="upload_network_error">Ошибка сети: %1$s</string>
     <string name="preparing_photo">Готовим фото…</string>
     <string name="upload_missing_file">Сначала выберите фотографию.</string>
@@ -89,4 +94,19 @@
 
     <string name="camera_error">Не удалось открыть камеру: %1$s</string>
     <string name="photo_error">Не удалось прочитать фото: %1$s</string>
+
+    <string name="upload_channel_name">Загрузка фотографий</string>
+    <string name="upload_channel_description">Ход загрузки фотографий на Викисклад</string>
+    <string name="upload_notification_generic_title">Загрузка фото</string>
+    <string name="upload_notification_title">Загружаем %1$s</string>
+    <string name="upload_notification_progress">Загрузка… %1$d%%</string>
+    <string name="upload_notification_publishing">Публикуем файл на Commons…</string>
+    <string name="upload_notification_wikidata">Добавляем изображение в Викиданные…</string>
+    <string name="upload_notification_waiting">Ожидаем подключение к сети…</string>
+    <string name="upload_notification_success_title">Фото загружено</string>
+    <string name="upload_notification_success_text">%1$s теперь на Викискладе.</string>
+    <string name="upload_notification_success_p18_failed">%1$s загружен, но Викиданные не обновились.</string>
+    <string name="upload_notification_failed_title">Не удалось загрузить</string>
+    <string name="upload_notification_failed_text">%1$s</string>
+    <string name="upload_notification_session_expired">Сессия Commons истекла. Откройте приложение и войдите снова.</string>
 </resources>

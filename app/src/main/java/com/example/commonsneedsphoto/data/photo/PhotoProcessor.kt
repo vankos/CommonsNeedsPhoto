@@ -189,9 +189,23 @@ object PhotoProcessor {
         }
     }
 
-    fun clearCache(context: Context) {
+    /**
+     * Deletes old photo files left behind by a closed sheet or an abandoned camera intent.
+     *
+     * Files are kept for a week: WorkManager can hold an upload request while the phone is
+     * offline, and the worker needs the processed photo after an app restart.
+     */
+    fun clearStaleFiles(
+        context: Context,
+        maxAgeMillis: Long = STALE_FILE_MAX_AGE_MILLIS,
+    ) {
         val dir = File(context.filesDir, "photos")
         if (!dir.exists()) return
-        dir.listFiles()?.forEach { it.delete() }
+        val threshold = System.currentTimeMillis() - maxAgeMillis
+        dir.listFiles()?.forEach { file ->
+            if (file.lastModified() < threshold) file.delete()
+        }
     }
+
+    private const val STALE_FILE_MAX_AGE_MILLIS = 7L * 24L * 60L * 60L * 1000L
 }

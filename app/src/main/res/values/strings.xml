@@ -53,8 +53,9 @@
     <string name="wikidata_updating">Adding the image to Wikidata…</string>
     <string name="wikidata_updated">Wikidata updated: the image is set as P18, so the place will not return in the next search.</string>
     <string name="wikidata_failed">The photo is on Commons, but Wikidata was not updated: %1$s. The place may return after refreshing the map.</string>
-    <string name="wikidata_not_logged_in">the Wikidata session was not accepted. Log in with an account that can edit Wikidata, or add the “Create, edit, and move pages” grant to your bot password.</string>
-    <string name="wikidata_no_permission">your account is not allowed to edit Wikidata. Check the user rights or add the “Create, edit, and move pages” grant to your bot password.</string>
+    <string name="wikidata_not_logged_in">the Wikidata session was not accepted. Log in to your Wikimedia account again.</string>
+    <string name="wikidata_bot_password_session">the app is logged in with a bot password but has no Wikidata session. Log out and log in again with the same bot password; it needs the “Create, edit, and move pages” grant.</string>
+    <string name="wikidata_no_permission">your account is not allowed to edit Wikidata. Check the account’s Wikidata rights; for a bot password, add the “Create, edit, and move pages” grant.</string>
     <string name="open_file_page">Open file page</string>
     <string name="done">Done</string>
     <string name="cancel">Cancel</string>
@@ -75,7 +76,7 @@
     <string name="login">Log in</string>
     <string name="logout">Log out</string>
     <string name="login_title">Log in to Wikimedia Commons</string>
-    <string name="login_explanation">Log in with your normal Wikimedia Commons account. If two-factor authentication is enabled, you will be asked for the code on the next step. A bot password (name@bot) also works — use it if your account asks for a CAPTCHA or another verification method, or if you prefer not to enter your normal password.</string>
+    <string name="login_explanation">Log in with your normal Wikimedia Commons account. If two-factor authentication is enabled, you will be asked for the code on the next step. A bot password (name@bot) also works — use it if your account asks for a CAPTCHA or another verification method, or if you prefer not to enter your normal password. For the app to update Wikidata after an upload, a bot password needs the “Create, edit, and move pages” grant.</string>
     <string name="login_open_bot_passwords">Create a bot password (optional)</string>
     <string name="login_two_factor_title">Two-factor verification</string>
     <string name="login_two_factor_totp_hint">Enter the 6-digit code from your authenticator app.</string>

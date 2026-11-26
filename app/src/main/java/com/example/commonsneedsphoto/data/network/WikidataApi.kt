@@ -29,13 +29,25 @@ class WikidataApiException(
  * good: without P18 the SPARQL query will return the item again after a refresh.
  * The edit is best effort: it needs an authenticated Wikimedia session with
  * Wikidata edit rights, and a failure must not undo the Commons upload.
+ *
+ * Authentication on www.wikidata.org is not the same as on Commons: the session
+ * cookies from a normal login are often not usable there. A normal Commons login
+ * therefore asks Commons for a short-lived `centralauthtoken` and repeats every
+ * authenticated Wikidata request in a one-request CentralAuth session.
+ *
+ * A bot-password session cannot mint a centralauthtoken (MediaWiki uses a
+ * different session provider for it). Bot passwords are shared across Wikimedia
+ * wikis, so [loginWithBotPassword] signs the app in to Wikidata with the same
+ * bot password right after the Commons login and keeps that session in the jar.
  */
 class WikidataApi(
-    session: CommonsSession,
+    cookieJar: okhttp3.CookieJar,
     baseClient: OkHttpClient = Network.client,
+    private val wikidataApiUrl: String = WIKIDATA_API_URL,
+    private val commonsApiUrl: String = COMMONS_API_URL,
 ) {
     private val client = baseClient.newBuilder()
-        .cookieJar(session)
+        .cookieJar(cookieJar)
         .build()
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -47,17 +59,22 @@ class WikidataApi(
     suspend fun addImageClaim(qid: String, fileName: String): Boolean =
         withContext(Dispatchers.IO) {
             if (hasImageClaim(qid)) return@withContext true
-            val token = fetchCsrfToken()
-            val body = FormBody.Builder()
+            val auth = authenticatedCsrfToken()
+            // A centralauthtoken is single-use and short-lived, so the edit
+            // needs its own token, fresh from Commons.
+            val centralAuthToken = if (auth.usesCentralAuth) fetchCentralAuthToken() else null
+            val builder = FormBody.Builder()
                 .add("action", "wbsetclaim")
                 .add("format", "json")
                 .add("formatversion", "2")
                 .add("claim", buildP18Claim(fileName).toString())
                 .add("summary", EDIT_SUMMARY)
-                .add("token", token)
+                .add("token", auth.csrfToken)
                 .add("assert", "user")
-                .build()
-            val root = request(body)
+            if (centralAuthToken != null) {
+                builder.add("centralauthtoken", centralAuthToken)
+            }
+            val root = request("Wikidata", wikidataApiUrl, builder.build())
             val success = root["success"]?.jsonPrimitive?.intOrNull == 1
             if (!success) {
                 throw WikidataApiException(
@@ -68,6 +85,47 @@ class WikidataApi(
             true
         }
 
+    /**
+     * Logs in on Wikidata with the same bot password that was used for Commons.
+     *
+     * Needed because `action=centralauthtoken` rejects bot-password sessions
+     * (`badsession`). Wikimedia shares bot passwords across SUL wikis, so the
+     * credentials are valid here too and the grant set is the same.
+     */
+    suspend fun loginWithBotPassword(loginName: String, password: String) =
+        withContext(Dispatchers.IO) {
+            val loginToken = fetchLoginToken()
+            val body = FormBody.Builder()
+                .add("action", "login")
+                .add("format", "json")
+                .add("formatversion", "2")
+                .add("lgname", loginName.trim())
+                .add("lgpassword", password)
+                .add("lgtoken", loginToken)
+                .build()
+            val login = request("Wikidata", wikidataApiUrl, body)["login"]?.jsonObject
+            if (login.string("result") != "Success") {
+                throw WikidataApiException(
+                    "login-failed",
+                    login.string("reason")
+                        ?: login.string("message")
+                        ?: "Wikidata login failed",
+                )
+            }
+        }
+
+    private fun fetchLoginToken(): String {
+        val body = FormBody.Builder()
+            .add("action", "query")
+            .add("meta", "tokens")
+            .add("type", "login")
+            .add("format", "json")
+            .add("formatversion", "2")
+            .build()
+        val root = request("Wikidata", wikidataApiUrl, body)
+        return tokenOrThrow(root, "logintoken", "Could not get a Wikidata login token")
+    }
+
     private fun hasImageClaim(qid: String): Boolean {
         val body = FormBody.Builder()
             .add("action", "wbgetclaims")
@@ -76,53 +134,95 @@ class WikidataApi(
             .add("format", "json")
             .add("formatversion", "2")
             .build()
-        val root = request(body)
+        val root = request("Wikidata", wikidataApiUrl, body)
         val claims = root["claims"]?.jsonObject?.get("P18")?.jsonArray
         return !claims.isNullOrEmpty()
     }
 
-    private fun fetchCsrfToken(): String {
-        val body = FormBody.Builder()
+    /**
+     * A CSRF token for the Wikidata session.
+     *
+     * First tries the cookies that the jar already has: if the browser-style
+     * CentralAuth cookies survived the Commons login, Wikidata accepts them.
+     * When Wikidata answers as an anonymous user, the request is repeated with
+     * a fresh `centralauthtoken` from Commons.
+     */
+    private fun authenticatedCsrfToken(): WikidataAuth {
+        try {
+            return WikidataAuth(fetchCsrfToken(centralAuthToken = null), usesCentralAuth = false)
+        } catch (exception: WikidataApiException) {
+            if (exception.code !in SESSION_ERROR_CODES) throw exception
+        }
+        val centralAuthToken = fetchCentralAuthToken()
+        return WikidataAuth(
+            csrfToken = fetchCsrfToken(centralAuthToken),
+            usesCentralAuth = true,
+        )
+    }
+
+    private fun fetchCsrfToken(centralAuthToken: String?): String {
+        val builder = FormBody.Builder()
             .add("action", "query")
             .add("meta", "tokens")
             .add("type", "csrf")
             .add("format", "json")
             .add("formatversion", "2")
             .add("assert", "user")
+        if (centralAuthToken != null) {
+            builder.add("centralauthtoken", centralAuthToken)
+        }
+        val root = request("Wikidata", wikidataApiUrl, builder.build())
+        return tokenOrThrow(root, "csrftoken", "Could not get a Wikidata CSRF token")
+    }
+
+    private fun fetchCentralAuthToken(): String {
+        val body = FormBody.Builder()
+            .add("action", "centralauthtoken")
+            .add("format", "json")
+            .add("formatversion", "2")
+            .add("assert", "user")
             .build()
-        val root = request(body)
-        return root["query"]?.jsonObject
-            ?.get("tokens")?.jsonObject
-            ?.get("csrftoken")?.jsonPrimitive?.contentOrNull
+        val root = request("Commons", commonsApiUrl, body)
+        return parseCentralAuthToken(root)
             ?: throw WikidataApiException(
-                root.errorCode() ?: "token-failed",
-                root.errorText() ?: "Could not get a Wikidata CSRF token",
+                root.errorCode() ?: "centralauthtoken-failed",
+                root.errorText() ?: "Could not get a CentralAuth token from Commons",
             )
     }
 
-    private fun request(body: RequestBody): JsonObject {
+    private fun tokenOrThrow(root: JsonObject, name: String, fallback: String): String {
+        val token = root["query"]?.jsonObject
+            ?.get("tokens")?.jsonObject
+            ?.string(name)
+        return token ?: throw WikidataApiException(
+            root.errorCode() ?: "token-failed",
+            root.errorText() ?: fallback,
+        )
+    }
+
+    private fun request(apiName: String, url: String, body: RequestBody): JsonObject {
         val request = Request.Builder()
-            .url(API_URL)
+            .url(url)
             .header("User-Agent", Network.USER_AGENT)
             .post(body)
             .build()
         client.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
             if (text.isBlank()) {
-                throw IOException("Empty response from Wikidata (HTTP ${response.code})")
+                throw IOException("Empty response from $apiName (HTTP ${response.code})")
             }
             val root = runCatching { json.parseToJsonElement(text).jsonObject }.getOrElse {
-                throw IOException("Unexpected response from Wikidata (HTTP ${response.code})")
+                throw IOException("Unexpected response from $apiName (HTTP ${response.code})")
             }
             root["error"]?.let { error ->
                 val obj = error.jsonObject
                 throw WikidataApiException(
                     obj["code"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                    obj["info"]?.jsonPrimitive?.contentOrNull ?: "Wikidata API error",
+                    obj["info"]?.jsonPrimitive?.contentOrNull ?: "$apiName API error",
                 )
             }
             if (!response.isSuccessful) {
-                throw IOException("Wikidata API failed (HTTP ${response.code})")
+                throw IOException("$apiName API failed (HTTP ${response.code})")
             }
             return root
         }
@@ -136,11 +236,44 @@ class WikidataApi(
         (this["error"] as? JsonObject)
             ?.get("info")?.jsonPrimitive?.contentOrNull
 
+    private fun JsonObject?.string(key: String): String? =
+        this?.get(key)?.jsonPrimitive?.contentOrNull
+
+    private data class WikidataAuth(
+        val csrfToken: String,
+        /** true when the token was obtained in a one-request CentralAuth session. */
+        val usesCentralAuth: Boolean,
+    )
+
     private companion object {
-        const val API_URL = "https://www.wikidata.org/w/api.php"
+        const val WIKIDATA_API_URL = "https://www.wikidata.org/w/api.php"
+        const val COMMONS_API_URL = "https://commons.wikimedia.org/w/api.php"
         const val EDIT_SUMMARY = "Adding image from Wikimedia Commons (Commons needs photo MVP)"
+
+        /** Codes that mean "the jar has no usable Wikidata session". */
+        val SESSION_ERROR_CODES = setOf(
+            "assertuserfailed",
+            "mustbeloggedin",
+            "notloggedin",
+        )
     }
 }
+
+/**
+ * Reads the token from an `action=centralauthtoken` response.
+ *
+ * The API answers with a nested object (`{"centralauthtoken": {"centralauthtoken": "…"}}`);
+ * the plain shape is accepted as well because the formatversion history of the
+ * module is not consistent across releases.
+ *
+ * Pure function, unit tested without Android or network.
+ */
+internal fun parseCentralAuthToken(root: JsonObject): String? =
+    when (val value = root["centralauthtoken"]) {
+        is JsonObject -> value["centralauthtoken"]?.jsonPrimitive?.contentOrNull
+        null -> null
+        else -> value.jsonPrimitive.contentOrNull
+    }?.takeIf { it.isNotBlank() }
 
 /**
  * The JSON object accepted by `action=wbsetclaim` for a Wikidata image claim.

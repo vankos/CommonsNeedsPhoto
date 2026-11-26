@@ -92,7 +92,7 @@ class CommonsApi(
     suspend fun login(loginName: String, password: String): LoginResult =
         withContext(Dispatchers.IO) {
             pendingVerification = null
-            if (loginName.trim().contains('@')) {
+            if (isBotPasswordLogin(loginName)) {
                 LoginResult.Success(loginWithBotPassword(loginName, password))
             } else {
                 val name = loginName.trim()
@@ -554,6 +554,12 @@ private fun JsonObject.errorCode(): String? =
 
 private fun JsonObject.errorText(): String? =
     (this["error"] as? JsonObject)?.string("info")
+
+/**
+ * A login name with `@` is a bot-password name (`User@app`) and uses
+ * `action=login` instead of the interactive `action=clientlogin` flow.
+ */
+internal fun isBotPasswordLogin(loginName: String): Boolean = loginName.trim().contains('@')
 
 /**
  * Fields of the first and second `action=clientlogin` requests. Kept pure so

@@ -14,6 +14,7 @@ import com.example.commonsneedsphoto.data.model.distanceMeters
 import com.example.commonsneedsphoto.data.network.LoginResult
 import com.example.commonsneedsphoto.data.network.TwoFactorMethod
 import com.example.commonsneedsphoto.data.network.UploadedFile
+import com.example.commonsneedsphoto.data.network.isBotPasswordLogin
 import com.example.commonsneedsphoto.data.photo.PhotoProcessor
 import com.example.commonsneedsphoto.data.upload.CommonsFileName
 import com.example.commonsneedsphoto.data.upload.UploadLicense
@@ -332,7 +333,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(login = LoginUiState(isLoggingIn = true)) }
             try {
                 when (val result = container.commonsApi.login(loginName, password)) {
-                    is LoginResult.Success -> finishLogin(result.userName)
+                    is LoginResult.Success -> {
+                        if (isBotPasswordLogin(loginName)) {
+                            // A bot-password session cannot mint a centralauthtoken for
+                            // Wikidata, so sign in there with the same (global) bot
+                            // password. Best effort: uploading to Commons already works.
+                            try {
+                                container.wikidataApi.loginWithBotPassword(loginName, password)
+                            } catch (cancel: CancellationException) {
+                                throw cancel
+                            } catch (_: Exception) {
+                                // The P18 step reports the missing Wikidata session.
+                            }
+                        }
+                        finishLogin(result.userName)
+                    }
                     is LoginResult.VerificationRequired -> _state.update {
                         it.copy(
                             login = LoginUiState(
@@ -664,8 +679,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun p18ErrorMessage(code: String?, message: String?): String = when (code) {
-        "assertuserfailed", "mustbeloggedin", "notloggedin" ->
+        "assertuserfailed", "mustbeloggedin", "notloggedin", "notattached", "badtoken" ->
             app.getString(R.string.wikidata_not_logged_in)
+        "badsession" ->
+            app.getString(R.string.wikidata_bot_password_session)
         "permissiondenied", "badaccess-groups" ->
             app.getString(R.string.wikidata_no_permission)
         else -> message ?: app.getString(R.string.upload_failed_unknown)

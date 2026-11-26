@@ -123,6 +123,15 @@ A **Wikimedia bot password** is optional and also supported:
 4. In the app tap the account icon (or “Log in” in the upload sheet), enter
    `YourUsername@phone` and the generated password.
 
+After the Commons login the app also signs in to Wikidata with the same bot password. Wikimedia
+shares bot passwords across its wikis, and a bot-password session cannot create the
+`centralauthtoken` used for normal logins, so this second sign-in is what gives the `P18` edit a
+Wikidata session. The bot password needs the **Create, edit, and move pages** grant for it.
+
+For a normal account the app does not log in to Wikidata with your password. Instead it asks
+Commons for a short-lived, single-use **`centralauthtoken`** and repeats every authenticated
+Wikidata request in that one-request session.
+
 The app does **not** store the password. For a normal login the password is kept in memory only
 during the two-factor step, and the app keeps the Commons session cookies in an app-private
 preference file (`commons_session`) which is excluded from Android backups. When the session
@@ -143,7 +152,7 @@ app/src/main/java/com/example/commonsneedsphoto/
 │   ├── network/
 │   │   ├── WikidataNearbyRepository.kt  SPARQL query + kotlinx.serialization parser
 │   │   ├── CommonsApi.kt               login, CSRF, unique name, chunk stash + publish
-│   │   ├── WikidataApi.kt              P18 claim after upload (best effort)
+│   │   ├── WikidataApi.kt              P18 claim, CentralAuth token, bot-password sign-in
 │   │   ├── CommonsSession.kt           persistent OkHttp CookieJar
 │   │   └── Network.kt                  shared OkHttp client and User-Agent
 │   ├── photo/PhotoProcessor.kt    EXIF rotation, resize, JPEG, geotagging, stale-file cleanup
@@ -190,9 +199,11 @@ rotation and is shown again when the user returns to the screen.
    JPEG deleted.
 4. `WikidataApi.addImageClaim` sets P18 from the published title (underscores converted back to
    spaces). The published result is saved before that step, so a worker stopped between the
-   Commons upload and the Wikidata edit resumes at P18 instead of uploading a duplicate file. A
-   Wikidata failure is reported in the sheet and in the result notification, but the work still
-   succeeds because the file is already on Commons.
+   Commons upload and the Wikidata edit resumes at P18 instead of uploading a duplicate file. If
+   the stored cookies do not give Wikidata an authenticated session (the usual case for a normal
+   login), the request retries with a fresh one-request `centralauthtoken` from Commons. A Wikidata
+   failure is reported in the sheet and in the result notification, but the work still succeeds
+   because the file is already on Commons.
 
 The foreground notification uses the `dataSync` type; Android 13+ asks for `POST_NOTIFICATIONS`
 when Upload is tapped. If the permission is denied the upload still runs, but progress is visible
@@ -244,9 +255,10 @@ User-Agent for osmdroid and should not be used for bulk tile downloads.
 
 * At most **500 places per search**; a city centre will reach that limit.
 * The `P18` claim is added on a **best-effort** basis after the upload. If the Wikidata edit is
-  rejected (no Wikidata session, missing “Create, edit, and move pages” right, or a network error),
-  the file still stays on Commons and the success screen says that the point can return after a
-  refresh. A Wikidata failure never rolls back the Commons upload.
+  rejected (the Commons session has expired, a bot password lacks the “Create, edit, and move
+  pages” grant, the account has no Wikidata edit rights, or a network error), the file still stays
+  on Commons and the success screen says that the point can return after a refresh. A Wikidata
+  failure never rolls back the Commons upload.
 * One photo at a time and one active upload. There is no contributions queue: closing the sheet
   while the work is still waiting for a network connection cancels it; once chunking has started
   the sheet cannot be closed, and closing the app leaves the work running with its notification.
@@ -268,8 +280,8 @@ User-Agent for osmdroid and should not be used for bulk tile downloads.
 * Place data: Wikidata (CC0), queried through `https://query.wikidata.org/sparql`.
 * Map tiles: © OpenStreetMap contributors, ODbL.
 * Uploaded photos: the licence chosen by the uploader (CC BY-SA 4.0 by default).
-* Upload endpoint: `https://commons.wikimedia.org/w/api.php`.
-* Wikidata API: `https://www.wikidata.org/w/api.php` (the `P18` claim after upload).
+* Upload endpoint: `https://commons.wikimedia.org/w/api.php` (including `action=centralauthtoken`).
+* Wikidata API: `https://www.wikidata.org/w/api.php` (the `P18` claim and bot-password sign-in).
 
 ## Credits
 

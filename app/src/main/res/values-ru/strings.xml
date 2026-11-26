@@ -55,8 +55,9 @@
     <string name="wikidata_updating">Добавляем изображение в Викиданные…</string>
     <string name="wikidata_updated">Викиданные обновлены: изображение записано в P18, поэтому место не вернётся при следующем поиске.</string>
     <string name="wikidata_failed">Фото загружено на Commons, но Викиданные не обновились: %1$s. Место может вернуться после обновления карты.</string>
-    <string name="wikidata_not_logged_in">сессия Викиданных не принята. Войдите в аккаунт, который может редактировать Викиданные, или добавьте паролю бота право «Create, edit, and move pages».</string>
-    <string name="wikidata_no_permission">аккаунту не разрешено редактировать Викиданные. Проверьте права или добавьте паролю бота право «Create, edit, and move pages».</string>
+    <string name="wikidata_not_logged_in">сессия Викиданных не принята. Войдите в аккаунт Викимедиа ещё раз.</string>
+    <string name="wikidata_bot_password_session">приложение вошло с паролем бота, но сессии Викиданных нет. Выйдите и войдите снова с тем же паролем бота; ему нужно право «Create, edit, and move pages».</string>
+    <string name="wikidata_no_permission">аккаунту не разрешено редактировать Викиданные. Проверьте права аккаунта в Викиданных, а паролю бота добавьте право «Create, edit, and move pages».</string>
     <string name="open_file_page">Открыть страницу файла</string>
     <string name="done">Готово</string>
     <string name="cancel">Отмена</string>
@@ -77,7 +78,7 @@
     <string name="login">Войти</string>
     <string name="logout">Выйти</string>
     <string name="login_title">Вход в Wikimedia Commons</string>
-    <string name="login_explanation">Войдите в обычный аккаунт Викимедиа. Если включена двухфакторная аутентификация, на следующем шаге попросим код. Пароль бота (имя@бот) тоже работает — используйте его, если аккаунт требует капчу или другой способ подтверждения, либо если не хотите вводить обычный пароль.</string>
+    <string name="login_explanation">Войдите в обычный аккаунт Викимедиа. Если включена двухфакторная аутентификация, на следующем шаге попросим код. Пароль бота (имя@бот) тоже работает — используйте его, если аккаунт требует капчу или другой способ подтверждения, либо если не хотите вводить обычный пароль. Чтобы приложение могло обновлять Викиданные после загрузки, паролю бота нужно право «Create, edit, and move pages».</string>
     <string name="login_open_bot_passwords">Создать пароль бота (необязательно)</string>
     <string name="login_two_factor_title">Двухфакторная проверка</string>
     <string name="login_two_factor_totp_hint">Введите 6-значный код из приложения-аутентификатора.</string>

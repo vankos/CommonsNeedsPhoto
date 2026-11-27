@@ -55,8 +55,8 @@ jobs:
             echo "note=Signed with the project keystore." >> "$GITHUB_OUTPUT"
           else
             echo "signed=false" >> "$GITHUB_OUTPUT"
-            echo "note=Debug-signed APK: add KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS and KEY_PASSWORD repository secrets for a signed release." >> "$GITHUB_OUTPUT"
-            echo "::warning::Signing secrets are not configured; attaching a debug-signed APK."
+            echo "note=Debug-signed release APK: the release package and name are kept, but the APK is signed with the Android debug key. Add KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS and KEY_PASSWORD repository secrets for a properly signed release." >> "$GITHUB_OUTPUT"
+            echo "::warning::Signing secrets are not configured; attaching the debug-signed release variant."
           fi
 
       - name: Decode keystore
@@ -74,25 +74,14 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "VERSION_CODE=$(echo "$VERSION" | tr -d '.')" >> "$GITHUB_ENV"
 
-      - name: Build signed release APK
-        if: steps.signing.outputs.signed == 'true'
+      - name: Build release APK
         run: ./gradlew :app:assembleRelease -PversionName=${{ env.VERSION }} -PversionCode=${{ env.VERSION_CODE }} --console=plain
-
-      - name: Build debug APK
-        if: steps.signing.outputs.signed == 'false'
-        run: ./gradlew :app:assembleDebug -PversionName=${{ env.VERSION }} -PversionCode=${{ env.VERSION_CODE }} --console=plain
 
       - name: Prepare APK
         id: apk
         run: |
-          if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
-            SOURCE="app/build/outputs/apk/release/app-release.apk"
-            SUFFIX=""
-          else
-            SOURCE="app/build/outputs/apk/debug/app-debug.apk"
-            SUFFIX="-debug"
-          fi
-          DEST="app/build/outputs/apk/CommonsNeedsPhoto${VERSION}${SUFFIX}.apk"
+          SOURCE="app/build/outputs/apk/release/app-release.apk"
+          DEST="app/build/outputs/apk/CommonsNeedsPhoto${VERSION}.apk"
           cp "$SOURCE" "$DEST"
           echo "path=$DEST" >> "$GITHUB_OUTPUT"
 

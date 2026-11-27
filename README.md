@@ -82,7 +82,9 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 The debug build has the package id `com.example.commonsneedsphoto.debug` and the launcher name
 “… (debug)”, so it installs next to a release build instead of replacing it. The release build
-keeps `com.example.commonsneedsphoto`, so the two can be logged in to different accounts.
+keeps `com.example.commonsneedsphoto`, so the two can be logged in to different accounts. The CI
+fallback described below always uses the **release** variant, so its APK name and package never
+contain `debug`.
 
 If Gradle reports `Value '...' given for org.gradle.java.home Gradle property is invalid`, point it
 at a valid JDK explicitly:
@@ -97,8 +99,10 @@ to the GitHub release.
 
 For a **signed** release, add `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and
 `KEY_PASSWORD` repository secrets and place `app/my-release-key.jks` in the build. Without those
-secrets the workflow still publishes a release, but with a **debug-signed** APK (it is marked as
-such in the release notes), so a tag is never left without an installable artifact.
+secrets the workflow still publishes a release: it builds the **release** variant (the normal
+package id and app name) and signs it with the Android debug key, so the APK is still installable
+and its name has no `-debug` suffix. The release notes mark it as debug-signed. A tag is never
+left without an installable artifact.
 
 ```bash
 base64 -w0 my-release-key.jks > my-release-key.jks.base64

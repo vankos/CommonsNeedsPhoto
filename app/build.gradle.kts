@@ -42,6 +42,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Installs next to a release build instead of replacing it: the
+            // package id and the launcher name differ, so both APKs coexist.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(

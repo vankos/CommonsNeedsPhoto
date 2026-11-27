@@ -64,6 +64,10 @@ gradlew.bat :app:assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
+The debug build has the package id `com.example.commonsneedsphoto.debug` and the launcher name
+“… (debug)”, so it installs next to a release build instead of replacing it. The release build
+keeps `com.example.commonsneedsphoto`, so the two can be logged in to different accounts.
+
 If Gradle reports `Value '...' given for org.gradle.java.home Gradle property is invalid`, point it
 at a valid JDK explicitly:
 

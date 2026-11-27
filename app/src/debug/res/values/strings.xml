@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Debug builds get their own package id, so the launcher needs a label that
+         distinguishes them from the release app installed next to them. -->
+    <string name="app_name">Commons needs photo (debug)</string>
+</resources>

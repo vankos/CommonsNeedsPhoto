@@ -47,6 +47,32 @@ object PhotoEditRenderer {
         return scaled
     }
 
+    /**
+     * One resample from the full decoded source. The line detector is sensitive
+     * to small gradients, so the analysis copy must not be the result of two
+     * consecutive bilinear scales (inSampleSize + createScaledBitmap).
+     */
+    fun decodeAnalysis(
+        file: File,
+        maxDimension: Int = LineSegmentDetector.ANALYSIS_MAX_SIDE,
+    ): Bitmap? {
+        val options = BitmapFactory.Options().apply {
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        val decoded = BitmapFactory.decodeFile(file.absolutePath, options) ?: return null
+        val side = max(decoded.width, decoded.height)
+        if (side <= maxDimension) return decoded
+        val scale = maxDimension.toFloat() / side
+        val scaled = Bitmap.createScaledBitmap(
+            decoded,
+            (decoded.width * scale).roundToInt().coerceAtLeast(1),
+            (decoded.height * scale).roundToInt().coerceAtLeast(1),
+            true,
+        )
+        if (scaled !== decoded) decoded.recycle()
+        return scaled
+    }
+
     fun rotate(bitmap: Bitmap, degrees: Int): Bitmap {
         val normalized = ((degrees % 360) + 360) % 360
         if (normalized == 0) return bitmap

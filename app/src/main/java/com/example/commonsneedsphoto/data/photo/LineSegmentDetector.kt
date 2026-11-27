@@ -52,7 +52,6 @@ object LineSegmentDetector {
     private const val MIN_LENGTH_FRACTION = 0.035
     private const val MIN_ASPECT = 6.0
     private const val MIN_DENSITY = 0.7
-    private const val ORDER_BINS = 1024
 
     fun greyscale(argb: IntArray, width: Int, height: Int): FloatArray =
         FloatArray(width * height) { index ->
@@ -95,7 +94,7 @@ object LineSegmentDetector {
         // Border pixels keep magnitude 0, so they start as "used" and region
         // growing never steps outside the image.
         val used = BooleanArray(n) { magnitude[it] < GRADIENT_THRESHOLD }
-        val order = orderByMagnitude(magnitude, used, maxMagnitude)
+        val order = orderByMagnitude(magnitude, used)
 
         val minLength = MIN_LENGTH_FRACTION * max(width, height)
         val minPixels = (minLength * 0.7).toInt()
@@ -188,31 +187,14 @@ object LineSegmentDetector {
         return LineSegment(mx + ux * tMin, my + uy * tMin, mx + ux * tMax, my + uy * tMax, length)
     }
 
-    /** Strongest gradients first (LSD's pseudo-ordering, 1024 bins). */
-    private fun orderByMagnitude(magnitude: FloatArray, used: BooleanArray, maxMagnitude: Float): IntArray {
-        val scale = (ORDER_BINS - 1) / maxMagnitude
-        val counts = IntArray(ORDER_BINS)
-        var total = 0
-        for (i in magnitude.indices) {
-            if (!used[i]) {
-                counts[(magnitude[i] * scale).toInt()]++
-                total++
-            }
+    /** Strongest gradients first, exactly as the Python prototype does. */
+    private fun orderByMagnitude(magnitude: FloatArray, used: BooleanArray): IntArray {
+        val candidates = ArrayList<Int>(magnitude.size)
+        for (index in magnitude.indices) {
+            if (!used[index]) candidates += index
         }
-        val start = IntArray(ORDER_BINS)
-        var acc = 0
-        for (bin in ORDER_BINS - 1 downTo 0) {
-            start[bin] = acc
-            acc += counts[bin]
-        }
-        val order = IntArray(total)
-        for (i in magnitude.indices) {
-            if (!used[i]) {
-                val bin = (magnitude[i] * scale).toInt()
-                order[start[bin]++] = i
-            }
-        }
-        return order
+        candidates.sortWith(compareByDescending<Int> { magnitude[it] })
+        return candidates.toIntArray()
     }
 
     private fun binomialBlur(src: FloatArray, width: Int, height: Int): FloatArray {

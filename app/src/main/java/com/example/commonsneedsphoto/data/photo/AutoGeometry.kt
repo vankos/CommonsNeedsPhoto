@@ -399,6 +399,7 @@ object UprightEstimator {
         val hYawOk = hz != null && reliable(hz, false, height, longSide, YAW_MIN_INLIERS, YAW_MIN_LENGTH)
         log += "segments ${segments.size} (V ${vertical.size}, H ${horizontal.size}); " +
             "V inliers ${v?.inliers?.size ?: 0} ok=$vOk, H inliers ${hz?.inliers?.size ?: 0} ok=$hOk yawOk=$hYawOk"
+        log += "V ${familyInfo(v, true, width, longSide)}; H ${familyInfo(hz, false, height, longSide)}"
 
         var rollV: Double? = null
         var rollH: Double? = null
@@ -621,6 +622,19 @@ object UprightEstimator {
         if (fam.inliers.size < minCount || fam.length < minLength * longSide) return false
         val mids = fam.inliers.map { if (vertical) it.midX else it.midY }
         return (mids.max() - mids.min()) / extent >= FAMILY_MIN_SPREAD
+    }
+
+    private fun familyInfo(fam: Family?, vertical: Boolean, extent: Int, longSide: Double): String {
+        if (fam == null) return "none"
+        val mids = fam.inliers.map { if (vertical) it.midX else it.midY }
+        val spread = if (mids.isEmpty()) 0.0 else (mids.max() - mids.min()) / extent
+        return String.format(
+            Locale.ROOT,
+            "inliers=%d length=%.2fL spread=%.2f",
+            fam.inliers.size,
+            fam.length / longSide,
+            spread,
+        )
     }
 
     // ----------------------------------------------------------------- angles

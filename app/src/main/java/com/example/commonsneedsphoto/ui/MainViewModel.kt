@@ -364,10 +364,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 var preview: Bitmap? = null
                 var rotated: Bitmap? = null
                 try {
-                    val sourceBitmap = PhotoEditRenderer.decodePreview(
-                        file = editor.source,
-                        maxDimension = LineSegmentDetector.ANALYSIS_MAX_SIDE,
-                    ) ?: return@withContext null
+                    val sourceBitmap = PhotoEditRenderer.decodeAnalysis(editor.source)
+                        ?: return@withContext null
                     preview = sourceBitmap
                     rotated = PhotoEditRenderer.rotate(sourceBitmap, editor.rotationDegrees)
                     val width = rotated.width

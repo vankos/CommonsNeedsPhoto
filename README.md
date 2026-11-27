@@ -234,9 +234,9 @@ frame instead:
    to a subject.
 
 The auto result is computed on the rotated 1024 px preview; the saved file is rendered from the
-full-resolution source. The approach is the same class of algorithm as Lightroom's Upright
-(line segments → vanishing points → homography), implemented from scratch without new
-dependencies or native code.
+full-resolution source. The approach is the same class of algorithm as line-based upright
+corrections in professional editors (line segments → vanishing points → homography),
+implemented from scratch without new dependencies or native code.
 
 ### Auto colour correction
 

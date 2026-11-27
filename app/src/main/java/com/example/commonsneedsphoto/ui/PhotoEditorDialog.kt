@@ -600,8 +600,8 @@ private fun PlainPreview(bitmap: Bitmap, colorFilter: ColorFilter?) {
 
 /**
  * The full warped canvas with white uncovered corners, plus the same-aspect
- * rectangle that will actually be saved. This mirrors Lightroom's geometry
- * preview: the user sees the correction and its minimal crop in one view.
+ * rectangle that will actually be saved. The correction and its minimal crop
+ * are visible in one view.
  */
 @Composable
 private fun AutoGeometryPreview(bitmap: Bitmap, layout: UprightLayout?) {

@@ -347,6 +347,16 @@ fun MapScreen(viewModel: MainViewModel) {
         )
     }
 
+    state.editor?.let { editor ->
+        PhotoEditorDialog(
+            state = editor,
+            onUpdate = viewModel::updateEditor,
+            onAutoGeometry = viewModel::autoDetectGeometry,
+            onApply = viewModel::saveEditedPhoto,
+            onDismiss = viewModel::dismissEditor,
+        )
+    }
+
     if (state.showLogin) {
         LoginDialog(
             state = state.login,

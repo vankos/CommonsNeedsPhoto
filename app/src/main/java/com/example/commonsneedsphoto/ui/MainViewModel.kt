@@ -1,7 +1,9 @@
 package com.example.commonsneedsphoto.ui
 
 import android.app.Application
+import android.graphics.Bitmap
 import android.net.Uri
+import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
@@ -15,7 +17,14 @@ import com.example.commonsneedsphoto.data.network.LoginResult
 import com.example.commonsneedsphoto.data.network.TwoFactorMethod
 import com.example.commonsneedsphoto.data.network.UploadedFile
 import com.example.commonsneedsphoto.data.network.isBotPasswordLogin
+import com.example.commonsneedsphoto.data.photo.AutoGeometry
+import com.example.commonsneedsphoto.data.photo.CropRect
+import com.example.commonsneedsphoto.data.photo.LineSegmentDetector
+import com.example.commonsneedsphoto.data.photo.PhotoEditRenderer
 import com.example.commonsneedsphoto.data.photo.PhotoProcessor
+import com.example.commonsneedsphoto.data.photo.UprightEstimator
+import com.example.commonsneedsphoto.data.photo.UprightMode
+import com.example.commonsneedsphoto.data.photo.UprightResult
 import com.example.commonsneedsphoto.data.upload.CommonsFileName
 import com.example.commonsneedsphoto.data.upload.UploadLicense
 import com.example.commonsneedsphoto.data.upload.UploadResumeKey
@@ -33,6 +42,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
+import kotlin.math.abs
+import kotlin.math.hypot
+import kotlin.math.max
 
 data class MapTarget(
     val id: Long,
@@ -88,6 +100,7 @@ data class MainUiState(
     val showLogin: Boolean = false,
     val login: LoginUiState = LoginUiState(),
     val upload: UploadUiState? = null,
+    val editor: PhotoEditorUiState? = null,
     val shouldRequestLocationPermission: Boolean = false,
 )
 
@@ -231,6 +244,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     description = description,
                     category = place.commonsCategory.orEmpty(),
                 ),
+                editor = null,
             )
         }
     }
@@ -252,7 +266,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         uploadObserverJob?.cancel()
         uploadObserverJob = null
         current.photo?.delete()
-        _state.update { it.copy(upload = null) }
+        _state.update { it.copy(upload = null, editor = null) }
     }
 
     fun newCameraTarget(): Uri {
@@ -314,7 +328,219 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun removePhoto() {
         _state.value.upload?.photo?.delete()
-        _state.update { it.copy(upload = it.upload?.copy(photo = null)) }
+        _state.update { it.copy(upload = it.upload?.copy(photo = null), editor = null) }
+    }
+
+    fun editPhoto() {
+        val upload = _state.value.upload ?: return
+        val photo = upload.photo ?: return
+        if (upload.isUploading || upload.isPreparingPhoto) return
+        if (_state.value.editor != null) return
+        _state.update { it.copy(editor = PhotoEditorUiState(source = photo)) }
+    }
+
+    fun updateEditor(transform: (PhotoEditorUiState) -> PhotoEditorUiState) {
+        _state.update { state ->
+            val editor = state.editor ?: return@update state
+            state.copy(editor = transform(editor).copy(error = null, notice = null))
+        }
+    }
+
+    fun dismissEditor() {
+        _state.update { state ->
+            val editor = state.editor ?: return@update state
+            if (editor.isSaving) state else state.copy(editor = null)
+        }
+    }
+
+    fun autoDetectGeometry() {
+        val editor = _state.value.editor ?: return
+        if (editor.isDetecting || editor.isSaving) return
+        _state.update {
+            it.copy(editor = editor.copy(isDetecting = true, error = null, notice = null))
+        }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.Default) {
+                var preview: Bitmap? = null
+                var rotated: Bitmap? = null
+                try {
+                    val sourceBitmap = PhotoEditRenderer.decodePreview(
+                        file = editor.source,
+                        maxDimension = LineSegmentDetector.ANALYSIS_MAX_SIDE,
+                    ) ?: return@withContext null
+                    preview = sourceBitmap
+                    rotated = PhotoEditRenderer.rotate(sourceBitmap, editor.rotationDegrees)
+                    val width = rotated.width
+                    val height = rotated.height
+                    val pixels = IntArray(width * height)
+                    rotated.getPixels(pixels, 0, width, 0, 0, width, height)
+                    val grey = LineSegmentDetector.greyscale(pixels, width, height)
+                    val segments = LineSegmentDetector.detect(grey, width, height)
+                    UprightEstimator.estimate(
+                        segments = segments,
+                        width = width,
+                        height = height,
+                        focalRatio = focalRatio(editor.source, width, height),
+                    )
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (exception: Exception) {
+                    null
+                } finally {
+                    if (rotated != null && rotated !== preview) rotated.recycle()
+                    preview?.recycle()
+                }
+            }
+            if (result == null) {
+                _state.update { state ->
+                    val current = state.editor ?: return@update state
+                    if (current.source != editor.source) return@update state
+                    state.copy(
+                        editor = current.copy(
+                            isDetecting = false,
+                            error = app.getString(R.string.editor_geometry_no_lines),
+                        ),
+                    )
+                }
+                return@launch
+            }
+            val log = when (result) {
+                is UprightResult.Corrected -> result.log
+                is UprightResult.AlreadyStraight -> result.log
+                is UprightResult.NotFound -> result.log
+            }
+            android.util.Log.d("UprightEstimator", log.joinToString("\n"))
+            _state.update { state ->
+                val current = state.editor ?: return@update state
+                if (current.source != editor.source) return@update state
+                if (current.rotationDegrees != editor.rotationDegrees) {
+                    return@update state.copy(editor = current.copy(isDetecting = false))
+                }
+                when (result) {
+                    is UprightResult.Corrected -> state.copy(
+                        editor = current.copy(
+                            isDetecting = false,
+                            autoGeometry = result.geometry,
+                            quad = null,
+                            crop = CropRect.FULL,
+                            notice = noticeFor(result.geometry),
+                            error = null,
+                        ),
+                    )
+
+                    is UprightResult.AlreadyStraight -> state.copy(
+                        editor = current.copy(
+                            isDetecting = false,
+                            notice = app.getString(R.string.editor_geometry_already_straight),
+                            error = null,
+                        ),
+                    )
+
+                    is UprightResult.NotFound -> state.copy(
+                        editor = current.copy(
+                            isDetecting = false,
+                            error = app.getString(
+                                if (result.reason == UprightResult.Reason.NO_LINES) {
+                                    R.string.editor_geometry_no_lines
+                                } else {
+                                    R.string.editor_geometry_too_strong
+                                },
+                            ),
+                            notice = null,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun noticeFor(geometry: AutoGeometry): String = when (geometry.mode) {
+        UprightMode.LEVEL -> app.getString(
+            R.string.editor_geometry_leveled,
+            Math.toDegrees(abs(geometry.roll)),
+        )
+        UprightMode.VERTICAL -> app.getString(R.string.editor_geometry_vertical)
+        UprightMode.FULL -> app.getString(R.string.editor_geometry_full)
+    }
+
+    private fun focalRatio(source: File, width: Int, height: Int): Double {
+        val focal35 = runCatching {
+            ExifInterface(source.absolutePath).getAttributeInt(
+                ExifInterface.TAG_FOCAL_LENGTH_IN_35MM_FILM,
+                0,
+            )
+        }.getOrDefault(0)
+        if (focal35 <= 0) return UprightEstimator.DEFAULT_FOCAL_RATIO
+        val longSide = max(width, height).toDouble()
+        return (
+            focal35 / 43.27 * hypot(width.toDouble(), height.toDouble()) / longSide
+            ).coerceIn(0.45, 2.5)
+    }
+
+    fun saveEditedPhoto() {
+        val editor = _state.value.editor ?: return
+        if (editor.isSaving || editor.isDetecting) return
+        if (!editor.edits.hasEdits) {
+            // Nothing was changed: keep the original JPEG instead of re-encoding it.
+            _state.update { it.copy(editor = null) }
+            return
+        }
+        _state.update { it.copy(editor = editor.copy(isSaving = true, error = null)) }
+        viewModelScope.launch {
+            try {
+                val output = withContext(Dispatchers.IO) {
+                    val dir = File(app.filesDir, "photos").apply { mkdirs() }
+                    val file = File(dir, "upload_edited_${System.currentTimeMillis()}.jpg")
+                    try {
+                        PhotoEditRenderer.render(editor.source, file, editor.edits)
+                    } catch (exception: Exception) {
+                        file.delete()
+                        throw exception
+                    }
+                    file
+                }
+                val upload = _state.value.upload
+                val currentEditor = _state.value.editor
+                if (upload == null ||
+                    upload.photo != editor.source ||
+                    currentEditor?.source != editor.source
+                ) {
+                    output.delete()
+                    _state.update { state ->
+                        val current = state.editor ?: return@update state
+                        if (current.source != editor.source) return@update state
+                        if (state.upload == null) {
+                            state.copy(editor = null)
+                        } else {
+                            state.copy(editor = current.copy(isSaving = false))
+                        }
+                    }
+                    return@launch
+                }
+                editor.source.delete()
+                _state.update {
+                    it.copy(
+                        upload = it.upload?.copy(photo = output, error = null),
+                        editor = null,
+                    )
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (exception: Exception) {
+                _state.update {
+                    val current = it.editor ?: return@update it
+                    it.copy(
+                        editor = current.copy(
+                            isSaving = false,
+                            error = app.getString(
+                                R.string.editor_save_failed,
+                                exception.message ?: exception.javaClass.simpleName,
+                            ),
+                        ),
+                    )
+                }
+            }
+        }
     }
 
     fun updateUpload(transform: (UploadUiState) -> UploadUiState) {

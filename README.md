@@ -21,6 +21,20 @@ flows are implemented — there are no Explore/Bookmarks/Contributions tabs.
   searched centre. The **My location** button only recentres the map — it does not reload places;
   tap **Search this area** (or the refresh icon) when you want fresh data. The next query radius is
   derived from the current viewport (centre to the north-east corner, clamped to 0.5–30 km).
+* **Photo editing before upload.** The pencil on the photo preview opens a small editor with
+  three tools:
+  * **Crop** — drag the corners, pick a 1:1, 4:3, 3:2 or 16:9 frame, or rotate the photo by
+    90°;
+  * **Geometry** — drag the four corners of the subject and the area is rectified with a
+    perspective transform (the document workflow); **Auto geometry** finds straight lines,
+    estimates where they meet (vanishing points) and applies a frame-preserving virtual-camera
+    rotation, with a preview of the corrected canvas and the rectangle that will be saved;
+  * **Colour** — one automatic correction for light, colour cast and contrast, with a strength
+    slider. It is a histogram/percentile + grey-world white-balance + contrast matrix, not an
+    AI filter.
+  Editing is non-destructive while the sheet is open: the preview is computed at screen
+  resolution, and the full-resolution JPEG (≤ 4096 px) is rendered only when the checkmark is
+  tapped. The camera EXIF and GPS from the processed photo are copied to the edited file.
 * **Photo upload dialog.** Tap a pin to open a bottom sheet with the place name, description,
   distance, Wikidata link and a “No photo on Commons yet” badge. The sheet lets you:
   * take a photo with the camera or pick one from the gallery;
@@ -45,7 +59,9 @@ flows are implemented — there are no Explore/Bookmarks/Contributions tabs.
   into a clear “log in again” message instead of a generic failure.
 * **Photo pipeline.** The selected image is decoded, oriented from EXIF, scaled to at most 4096 px,
   saved as JPEG (quality 92), and the camera EXIF is copied. If the photo has no GPS, the place
-  coordinates are written into EXIF.
+  coordinates are written into EXIF. Editing re-encodes the same processed file after the
+  rotation / auto-upright / perspective / crop / colour steps and copies the EXIF to the new
+  file.
 * **Localisation.** English and Russian UI.
 
 ## Requirements
@@ -159,7 +175,13 @@ app/src/main/java/com/example/commonsneedsphoto/
 │   │   ├── WikidataApi.kt              P18 claim, CentralAuth token, bot-password sign-in
 │   │   ├── CommonsSession.kt           persistent OkHttp CookieJar
 │   │   └── Network.kt                  shared OkHttp client and User-Agent
-│   ├── photo/PhotoProcessor.kt    EXIF rotation, resize, JPEG, geotagging, stale-file cleanup
+│   ├── photo/
+│   │   ├── PhotoProcessor.kt    EXIF rotation, resize, JPEG, geotagging, stale-file cleanup
+│   │   ├── PhotoEdits.kt        normalised crop/quad/auto-geometry data and geometry maths
+│   │   ├── PhotoEditRenderer.kt rotation, upright warp, perspective warp, crop, JPEG + EXIF
+│   │   ├── AutoGeometry.kt      line-based Upright, framing and minimal export crop
+│   │   ├── LineSegmentDetector.kt  gradient-region line detector (LSD-lite)
+│   │   └── AutoEnhance.kt       histogram/white-balance/contrast colour matrix
 │   ├── location/LocationProvider.kt    one-shot LocationManager fix
 │   └── upload/
 │       ├── UploadChunks.kt        512 KB chunk plan, offsets, 6 h stash lifetime
@@ -172,9 +194,11 @@ app/src/main/java/com/example/commonsneedsphoto/
 │       ├── WikitextBuilder.kt     {{Information}} page and file-name rules
 │       └── UploadLicense.kt       licence enum and templates
 └── ui/
-    ├── MainViewModel.kt           screen state, search, login, upload orchestration
+    ├── MainViewModel.kt           screen state, search, login, upload, editor state
     ├── MapScreen.kt               osmdroid map, clustered canvas overlay, permission flow
-    ├── UploadSheet.kt             photo picker, metadata form, licence, progress, success
+    ├── UploadSheet.kt             photo picker, edit button, metadata form, licence, progress
+    ├── PhotoEditorState.kt        editor state kept across rotation
+    ├── PhotoEditorDialog.kt       crop/geometry/colour editor with draggable overlays
     ├── LoginDialog.kt             bot-password login
     └── TakePictureWithPermission.kt  camera contract with FileProvider write grant
 ```
@@ -183,6 +207,59 @@ Dependencies are intentionally small: **Jetpack Compose (Material 3)**, **osmdro
 **OkHttp** for HTTP, **kotlinx.serialization** for JSON, **Coil** for the photo preview and
 **WorkManager** (`work-runtime-ktx`) for background uploads. There is no DI framework, database or
 navigation library — the MVP is a single screen plus two dialogs.
+
+### Automatic geometry
+
+The Geometry tab has two tools. Four draggable corners apply a document-style perspective crop
+(the selected quadrilateral is mapped to a rectangle). **Auto geometry** works on the whole
+frame instead:
+
+1. The rotated preview is downscaled to 1024 px and converted to grey.
+2. `LineSegmentDetector` grows regions of similar edge direction and fits a line to each region,
+   keeping long, thin segments (a small LSD-like detector).
+3. `UprightEstimator` separates near-vertical and near-horizontal segments, estimates their
+   vanishing directions with MSAC over pairs of the longest segments, and refines each
+   direction from its inliers.
+4. The two vanishing directions give a virtual camera rotation: roll, pitch and yaw (plus a
+   small shear). The correction is `H = S · K · R · K⁻¹`; it is stored as angles, so the 1280 px
+   preview and the 4096 px export produce the same result. The focal length is taken from the
+   35 mm EXIF tag when present, otherwise 0.70 × the long side.
+5. A candidate ladder tries FULL (verticals + horizontals), VERTICAL (verticals only) and LEVEL
+   (rotation only), at 100 %, 75 % and 50 % strength. Hard limits reject warps that stretch too
+   much or lose too many pixels, compared with a plain rotation by the same roll; if nothing
+   passes, the editor says so and the manual corners remain.
+6. The preview shows the whole corrected canvas on white (the uncovered corners) with the
+   rectangle that will be saved. The export is the largest same-aspect rectangle without empty
+   corners, found by a small linear program, so the frame is preserved instead of being cropped
+   to a subject.
+
+The auto result is computed on the rotated 1024 px preview; the saved file is rendered from the
+full-resolution source. The approach is the same class of algorithm as Lightroom's Upright
+(line segments → vanishing points → homography), implemented from scratch without new
+dependencies or native code.
+
+### Auto colour correction
+
+The colour tab applies one deterministic correction, not an AI filter. It samples the image at
+256 px and builds a single 4×5 colour matrix:
+
+1. **Levels / light.** The luminance histogram sets the black point at the 0.5th percentile and
+   the white point at the 99.5th percentile (a flat image falls back to the full 0–255 range).
+   The range is stretched to the full range, then the mean luminance is nudged towards 50% grey
+   by up to ±28 levels, so dark phone shots are lifted without clipping bright areas.
+2. **Colour cast.** A grey-world white balance compares the mean of each channel with the
+   overall mean. Gains are limited to ±10% and applied at 60% strength, so a sunset or a night
+   sky keeps its mood instead of being neutralised.
+3. **Contrast.** The luminance standard deviation picks a factor around a target of ≈0.22,
+   clamped to 0.95–1.30 and applied at 55% around mid-grey.
+4. **Saturation.** The mean HSV saturation of a dull photo gets a luma-preserving boost of up to
+   1.16; the correction never desaturates.
+
+The strength slider blends the matrix with the identity matrix, so 0% is the untouched photo
+and 100% is the full correction. The same matrix is used for the live Compose preview and for
+the full-resolution render (`AutoEnhance.kt`); because it is a linear transform it is cheap and
+does not touch pixels one by one. It cannot recover clipped highlights or fix mixed lighting —
+it is a global correction.
 
 ### Background uploads
 
@@ -275,6 +352,14 @@ User-Agent for osmdroid and should not be used for bulk tile downloads.
   upload still runs, but progress is visible only inside the app. The Android 14+ `dataSync`
   foreground-service permission is declared in the manifest.
 * Photos are compressed to ≤ 4096 px.
+* The photo editor is deliberately basic: crop/rotate, a manual four-corner perspective crop,
+  a frame-preserving automatic Upright, and one automatic colour correction. The auto geometry
+  is a simplified Upright: there is no lens-distortion correction and no nonlinear focal-length
+  or lens optimisation. On a scene without reliable straight lines it reports that and leaves
+  the photo unchanged; on a very strong tilt the correction may crop a noticeable part of the
+  frame (a plain rotation by the same roll would cost about the same), but it never crops to a
+  detected subject. The colour correction is global: no local tone mapping, manual
+  brightness/contrast sliders or per-channel curves.
 * No duplicate-image SHA checks, title blacklist, depicts/captions, category search, multiple
   files or offline cache of the map.
 * The query returns every kind of Wikidata item with coordinates (including businesses and

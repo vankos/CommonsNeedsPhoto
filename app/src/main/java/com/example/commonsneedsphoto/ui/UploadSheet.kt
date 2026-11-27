@@ -19,12 +19,14 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
@@ -218,6 +220,7 @@ fun UploadSheet(
                 state = state,
                 showPhotoActions = showPhotoActions,
                 onToggleActions = { showPhotoActions = !showPhotoActions },
+                onEditPhoto = viewModel::editPhoto,
                 onTakePhoto = {
                     showPhotoActions = false
                     cameraLauncher.launch(viewModel.newCameraTarget())
@@ -420,6 +423,7 @@ private fun PhotoPicker(
     state: UploadUiState,
     showPhotoActions: Boolean,
     onToggleActions: () -> Unit,
+    onEditPhoto: () -> Unit,
     onTakePhoto: () -> Unit,
     onPickGallery: () -> Unit,
     onRemove: () -> Unit,
@@ -437,6 +441,23 @@ private fun PhotoPicker(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+            ) {
+                IconButton(
+                    onClick = onEditPhoto,
+                    enabled = !state.isUploading && !state.isPreparingPhoto,
+                ) {
+                    Icon(
+                        Icons.Filled.Edit,
+                        contentDescription = stringResource(R.string.edit_photo),
+                    )
+                }
+            }
             Surface(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)

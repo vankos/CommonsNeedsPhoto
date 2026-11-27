@@ -31,6 +31,7 @@ object PhotoProcessor {
         ExifInterface.TAG_F_NUMBER,
         ExifInterface.TAG_ISO_SPEED_RATINGS,
         ExifInterface.TAG_FOCAL_LENGTH,
+        ExifInterface.TAG_FOCAL_LENGTH_IN_35MM_FILM,
         ExifInterface.TAG_FLASH,
         ExifInterface.TAG_WHITE_BALANCE,
         ExifInterface.TAG_EXIF_VERSION,
@@ -172,20 +173,42 @@ object PhotoProcessor {
                 ExifInterface(it)
             } ?: return
             val outputExif = ExifInterface(output.absolutePath)
-            for (tag in copiedExifTags) {
-                sourceExif.getAttribute(tag)?.let { outputExif.setAttribute(tag, it) }
-            }
-            outputExif.setAttribute(
-                ExifInterface.TAG_ORIENTATION,
-                ExifInterface.ORIENTATION_NORMAL.toString(),
-            )
-            val existing = sourceExif.latLong
-            if (existing != null) {
-                outputExif.setLatLong(existing[0], existing[1])
-            } else if (fallbackCoordinates != null) {
-                outputExif.setLatLong(fallbackCoordinates.first, fallbackCoordinates.second)
-            }
+            copyExifAttributes(sourceExif, outputExif, fallbackCoordinates)
             outputExif.saveAttributes()
+        }
+    }
+
+    /**
+     * Copies the camera metadata from one processed file to an edited one, so
+     * re-encoding after a crop or a colour correction keeps the date, camera
+     * model and GPS location.
+     */
+    fun copyExif(source: File, output: File) {
+        runCatching {
+            val sourceExif = ExifInterface(source.absolutePath)
+            val outputExif = ExifInterface(output.absolutePath)
+            copyExifAttributes(sourceExif, outputExif, fallbackCoordinates = null)
+            outputExif.saveAttributes()
+        }
+    }
+
+    private fun copyExifAttributes(
+        sourceExif: ExifInterface,
+        outputExif: ExifInterface,
+        fallbackCoordinates: Pair<Double, Double>?,
+    ) {
+        for (tag in copiedExifTags) {
+            sourceExif.getAttribute(tag)?.let { outputExif.setAttribute(tag, it) }
+        }
+        outputExif.setAttribute(
+            ExifInterface.TAG_ORIENTATION,
+            ExifInterface.ORIENTATION_NORMAL.toString(),
+        )
+        val existing = sourceExif.latLong
+        if (existing != null) {
+            outputExif.setLatLong(existing[0], existing[1])
+        } else if (fallbackCoordinates != null) {
+            outputExif.setLatLong(fallbackCoordinates.first, fallbackCoordinates.second)
         }
     }
 

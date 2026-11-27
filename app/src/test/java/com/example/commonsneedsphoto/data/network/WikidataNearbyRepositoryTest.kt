@@ -1,6 +1,7 @@
 package com.example.commonsneedsphoto.data.network
 
 import com.example.commonsneedsphoto.data.model.LatLon
+import com.example.commonsneedsphoto.data.model.NearbyPlace
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -103,5 +104,92 @@ class WikidataNearbyRepositoryTest {
 
         assertEquals(1, places.size)
         assertEquals("Q2", places.single().qid)
+    }
+
+    @Test
+    fun `parseLabels follows the preferred language chain and falls back to any label`() {
+        val json = """
+            {
+              "entities": {
+                "Q108142865": {
+                  "labels": {
+                    "ca": {"language": "ca", "value": "Centre Priv. Ed. Inf. 1er Cicle Ruzafa Montessori"},
+                    "es": {"language": "es", "value": "Centro Privado de Educacion Infantil de Primer Ciclo Ruzafa Montessori"}
+                  }
+                },
+                "Q42": {
+                  "labels": {
+                    "en": {"language": "en", "value": "Douglas Adams"},
+                    "mul": {"language": "mul", "value": "Douglas Adams (mul)"}
+                  }
+                },
+                "Q1": {
+                  "labels": {
+                    "es": {"language": "es", "value": "Nombre"},
+                    "mul": {"language": "mul", "value": "Neutral name"}
+                  }
+                },
+                "Q7": {
+                  "labels": {
+                    "en": {"language": "en", "value": "English name"},
+                    "ru": {"language": "ru", "value": "Русское название"}
+                  }
+                }
+              }
+            }
+        """.trimIndent()
+
+        val labels = repository.parseLabels(json, listOf("ru", "en", "mul"))
+
+        assertEquals(
+            "Centre Priv. Ed. Inf. 1er Cicle Ruzafa Montessori",
+            labels["Q108142865"],
+        )
+        assertEquals("Douglas Adams", labels["Q42"])
+        assertEquals("Neutral name", labels["Q1"])
+        assertEquals("Русское название", labels["Q7"])
+    }
+
+    @Test
+    fun `parseLabels skips items without a usable label`() {
+        val json = """
+            {
+              "entities": {
+                "Q1": {"labels": {}},
+                "Q2": {"labels": {"es": {"language": "es", "value": "  "}}},
+                "Q3": {}
+              }
+            }
+        """.trimIndent()
+
+        assertTrue(repository.parseLabels(json, listOf("ru", "en", "mul")).isEmpty())
+    }
+
+    @Test
+    fun `fallback labels replace only qid placeholders`() {
+        val missing = NearbyPlace(
+            qid = "Q108142865",
+            label = "Q108142865",
+            description = null,
+            latitude = 39.459822,
+            longitude = -0.376108,
+            instanceOf = null,
+            commonsCategory = null,
+        )
+        val named = missing.copy(qid = "Q42", label = "Douglas Adams")
+
+        val places = applyFallbackLabels(
+            listOf(missing, named),
+            mapOf(
+                "Q108142865" to "Centro Privado de Educacion Infantil de Primer Ciclo Ruzafa Montessori",
+                "Q42" to "ignored",
+            ),
+        )
+
+        assertEquals(
+            "Centro Privado de Educacion Infantil de Primer Ciclo Ruzafa Montessori",
+            places[0].label,
+        )
+        assertEquals("Douglas Adams", places[1].label)
     }
 }

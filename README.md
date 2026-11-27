@@ -175,7 +175,7 @@ app/src/main/java/com/example/commonsneedsphoto/
 ├── data/
 │   ├── model/                     NearbyPlace, LatLon, haversine distance
 │   ├── network/
-│   │   ├── WikidataNearbyRepository.kt  SPARQL query + kotlinx.serialization parser
+│   │   ├── WikidataNearbyRepository.kt  SPARQL query, label fallback and parser
 │   │   ├── CommonsApi.kt               login, CSRF, unique name, chunk stash + publish
 │   │   ├── WikidataApi.kt              P18 claim, CentralAuth token, bot-password sign-in
 │   │   ├── CommonsSession.kt           persistent OkHttp CookieJar
@@ -323,7 +323,7 @@ WHERE {
     FILTER(LANG(?instanceOfLabel) = "en")
   }
   SERVICE wikibase:label {
-    bd:serviceParam wikibase:language "ru,en" .
+    bd:serviceParam wikibase:language "ru,en,mul" .
     ?q rdfs:label ?qLabel .
     ?q schema:description ?desc .
   }
@@ -335,6 +335,13 @@ LIMIT 500
 The query is the same “items without P18” shape used by the NoPhotoWikidata/StuffAround apps. The
 original Commons app instead loads all geolocated items in the viewport and colours the ones
 without a photo red; this MVP filters them in SPARQL because that is all it shows.
+
+WDQS returns the QID as `?qLabel` when the item has no label in the requested languages. For those
+items only, the app makes an extra `action=wbgetentities&props=labels` request (up to 50 IDs per
+call) and replaces the QID with an available label, preferring the device language, English and
+`mul`, then any label by language code. A place whose only labels are Spanish and Catalan is
+therefore still shown with a readable name instead of `Q108142865`. The extra lookup is best
+effort: if it fails, the QID stays.
 
 Map tiles come from OpenStreetMap and are displayed with attribution. The app sets a descriptive
 User-Agent for osmdroid and should not be used for bulk tile downloads.
@@ -369,6 +376,8 @@ User-Agent for osmdroid and should not be used for bulk tile downloads.
   files or offline cache of the map.
 * The query returns every kind of Wikidata item with coordinates (including businesses and
   streets), exactly like the raw query. There is no “only attractions” filter.
+* If an item has no label in the device language, English or `mul`, its title is taken from
+  another language (for example Spanish or Catalan); there is no language picker.
 * The app is an unofficial MVP and is not affiliated with Wikimedia Commons.
 
 ## Data and attribution

@@ -2,6 +2,7 @@ package com.example.commonsneedsphoto.data.network
 
 import com.example.commonsneedsphoto.data.model.LatLon
 import com.example.commonsneedsphoto.data.model.NearbyPlace
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -30,6 +31,10 @@ class WikidataNearbyRepository(
         limit: Int = 500,
     ): List<NearbyPlace> = withContext(Dispatchers.IO) {
         val query = buildQuery(center, radiusKm, limit)
+        withFallbackLabels(parse(sparqlRequest(query)))
+    }
+
+    private fun sparqlRequest(query: String): String {
         val url = "https://query.wikidata.org/sparql".toHttpUrl().newBuilder()
             .addQueryParameter("query", query)
             .addQueryParameter("format", "json")
@@ -43,13 +48,94 @@ class WikidataNearbyRepository(
             if (!response.isSuccessful) {
                 throw IOException("Wikidata query failed (HTTP ${response.code})")
             }
-            val body = response.body?.string().orEmpty()
-            parse(body)
+            return response.body?.string().orEmpty()
         }
     }
 
-    internal fun buildQuery(center: LatLon, radiusKm: Double, limit: Int): String {
+    /**
+     * The WDQS label service substitutes the entity ID when the item has no
+     * label in any of the requested languages. For those items only, fetch all
+     * labels from the Wikidata API and replace the ID with any available label,
+     * so a place whose only labels are Spanish and Catalan still has a readable
+     * title.
+     *
+     * The lookup is best effort: a failure leaves the QID in place and does not
+     * fail the whole search.
+     */
+    private fun withFallbackLabels(places: List<NearbyPlace>): List<NearbyPlace> {
+        val qids = places.asSequence()
+            .filter { it.label == it.qid }
+            .map { it.qid }
+            .distinct()
+            .toList()
+        if (qids.isEmpty()) return places
+        val labels = try {
+            fetchLabels(qids)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            return places
+        }
+        return applyFallbackLabels(places, labels)
+    }
+
+    /**
+     * Reads labels in every language for the given items. `wbgetentities`
+     * accepts at most 50 IDs per request; even with `formatversion=2` the
+     * `entities` value is an object keyed by entity ID.
+     */
+    private fun fetchLabels(qids: List<String>): Map<String, String> {
+        val labels = LinkedHashMap<String, String>()
+        for (chunk in qids.chunked(MAX_IDS_PER_LABEL_REQUEST)) {
+            val url = WIKIDATA_API_URL.toHttpUrl().newBuilder()
+                .addQueryParameter("action", "wbgetentities")
+                .addQueryParameter("ids", chunk.joinToString("|"))
+                .addQueryParameter("props", "labels")
+                .addQueryParameter("format", "json")
+                .addQueryParameter("formatversion", "2")
+                .build()
+            val request = Request.Builder()
+                .url(url)
+                .header("Accept", "application/json")
+                .header("User-Agent", Network.USER_AGENT)
+                .build()
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw IOException("Wikidata labels request failed (HTTP ${response.code})")
+                }
+                labels += parseLabels(response.body?.string().orEmpty())
+            }
+        }
+        return labels
+    }
+
+    /**
+     * Parses a `wbgetentities&props=labels` response and picks one label per
+     * item. The preferred languages follow the same order as the SPARQL fallback
+     * chain: the device language, English, `mul`, then any available label
+     * (deterministically, by language code).
+     */
+    internal fun parseLabels(
+        body: String,
+        preferredLanguages: List<String> = preferredLabelLanguages(),
+    ): Map<String, String> {
+        val entities = json.parseToJsonElement(body).jsonObject["entities"]?.jsonObject
+            ?: return emptyMap()
+        val labels = LinkedHashMap<String, String>()
+        for ((qid, element) in entities) {
+            val itemLabels = element.jsonObject["labels"]?.jsonObject ?: continue
+            choosePreferredLabel(itemLabels, preferredLanguages)?.let { labels[qid] = it }
+        }
+        return labels
+    }
+
+    private fun preferredLabelLanguages(): List<String> {
         val language = Locale.getDefault().language.ifBlank { "en" }
+        return listOf(language, "en", "mul").distinct()
+    }
+
+    internal fun buildQuery(center: LatLon, radiusKm: Double, limit: Int): String {
+        val labelLanguages = preferredLabelLanguages().joinToString(",")
         val radius = String.format(Locale.ROOT, "%.2f", radiusKm)
         return """
             SELECT ?q ?qLabel ?desc ?location
@@ -71,7 +157,7 @@ class WikidataNearbyRepository(
                 FILTER(LANG(?instanceOfLabel) = "en")
               }
               SERVICE wikibase:label {
-                bd:serviceParam wikibase:language "$language,en" .
+                bd:serviceParam wikibase:language "$labelLanguages" .
                 ?q rdfs:label ?qLabel .
                 ?q schema:description ?desc .
               }
@@ -122,5 +208,52 @@ class WikidataNearbyRepository(
 
     private companion object {
         val POINT_REGEX = Regex("""Point\(\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*\)""")
+        const val WIKIDATA_API_URL = "https://www.wikidata.org/w/api.php"
+
+        /** The `wbgetentities` action accepts at most 50 IDs per request. */
+        const val MAX_IDS_PER_LABEL_REQUEST = 50
+    }
+}
+
+/**
+ * Picks the first non-blank label in [preferredLanguages], then falls back to
+ * any label, ordered by language code so the choice is stable.
+ *
+ * The default chain of the nearby query already covers the device language and
+ * English in SPARQL; this function is used for the API response of items whose
+ * QID was returned instead of a label.
+ */
+internal fun choosePreferredLabel(
+    labels: JsonObject,
+    preferredLanguages: List<String>,
+): String? {
+    for (language in preferredLanguages) {
+        val label = labels[language]?.jsonObject?.get("value")
+            ?.jsonPrimitive?.contentOrNull
+            ?.takeIf { it.isNotBlank() }
+        if (label != null) return label
+    }
+    return labels.entries
+        .sortedBy { it.key }
+        .firstNotNullOfOrNull { (_, value) ->
+            value.jsonObject["value"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+        }
+}
+
+/**
+ * Replaces the QID placeholder of a place with a label fetched in another
+ * language. Places that already have a real label are left untouched.
+ */
+internal fun applyFallbackLabels(
+    places: List<NearbyPlace>,
+    labels: Map<String, String>,
+): List<NearbyPlace> {
+    if (labels.isEmpty()) return places
+    return places.map { place ->
+        if (place.label != place.qid) {
+            place
+        } else {
+            labels[place.qid]?.takeIf { it.isNotBlank() }?.let { place.copy(label = it) } ?: place
+        }
     }
 }

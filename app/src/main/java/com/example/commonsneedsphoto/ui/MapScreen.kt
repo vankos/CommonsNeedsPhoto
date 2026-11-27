@@ -93,7 +93,7 @@ fun MapScreen(viewModel: MainViewModel) {
     val snackbarHostState = remember { SnackbarHostState() }
     var hasLocationPermission by remember { mutableStateOf(hasLocationPermission(context)) }
     var showPermissionRationale by rememberSaveable { mutableStateOf(false) }
-    var permissionForLocateOnly by remember { mutableStateOf(false) }
+    var permissionForLocateOnly by rememberSaveable { mutableStateOf(false) }
     var showAccountDialog by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -106,6 +106,7 @@ fun MapScreen(viewModel: MainViewModel) {
         viewModel.onLocationPermissionResult(
             granted = granted,
             searchAfter = !permissionForLocateOnly,
+            keepZoom = permissionForLocateOnly,
         )
         permissionForLocateOnly = false
     }
@@ -165,7 +166,8 @@ fun MapScreen(viewModel: MainViewModel) {
             FloatingActionButton(
                 onClick = {
                     if (hasLocationPermission) {
-                        viewModel.locate(searchAfter = false)
+                        // Recentre without touching the zoom the user has chosen.
+                        viewModel.locate(searchAfter = false, keepZoom = true)
                     } else {
                         permissionForLocateOnly = true
                         permissionLauncher.launch(
@@ -546,7 +548,7 @@ private fun NearbyMap(
                 holder.lastTargetId = mapTarget.id
                 mapView.controller.animateTo(
                     GeoPoint(mapTarget.center.latitude, mapTarget.center.longitude),
-                    mapTarget.zoom,
+                    mapTarget.zoom ?: mapView.zoomLevelDouble,
                     MAP_ANIMATION_MS,
                 )
             }

@@ -18,9 +18,10 @@ flows are implemented — there are no Explore/Bookmarks/Contributions tabs.
   zooms in, tapping a single pin opens the upload dialog.
 * **Manual refresh.** Panning and zooming keep the last result set and do **not** issue a query.
   The **Search this area** button appears when the map centre moves more than 250 m from the last
-  searched centre. The **My location** button only recentres the map — it does not reload places;
-  tap **Search this area** (or the refresh icon) when you want fresh data. The next query radius is
-  derived from the current viewport (centre to the north-east corner, clamped to 0.5–30 km).
+  searched centre. The **My location** button only recentres the map at the zoom level you have
+  chosen — it does not reload places; tap **Search this area** (or the refresh icon) when you want
+  fresh data. The next query radius is derived from the current viewport (centre to the
+  north-east corner, clamped to 0.5–30 km).
 * **Photo editing before upload.** The pencil on the photo preview opens a small editor with
   three tools:
   * **Crop** — drag the corners, pick a 1:1, 4:3, 3:2 or 16:9 frame, or rotate the photo by

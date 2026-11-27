@@ -49,7 +49,8 @@ import kotlin.math.max
 data class MapTarget(
     val id: Long,
     val center: LatLon,
-    val zoom: Double,
+    /** Null keeps the zoom level the map has when the target is applied. */
+    val zoom: Double?,
 )
 
 val DEFAULT_CENTER = LatLon(44.4268, 26.1025) // Bucharest
@@ -140,11 +141,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    fun onLocationPermissionResult(granted: Boolean, searchAfter: Boolean = true) {
+    fun onLocationPermissionResult(
+        granted: Boolean,
+        searchAfter: Boolean = true,
+        keepZoom: Boolean = false,
+    ) {
         prefs.edit().putBoolean(KEY_PERMISSION_ASKED, true).apply()
         _state.update { it.copy(shouldRequestLocationPermission = false) }
         if (granted) {
-            locate(searchAfter = searchAfter)
+            locate(searchAfter = searchAfter, keepZoom = keepZoom)
         } else {
             _state.update { it.copy(message = app.getString(R.string.location_permission_denied)) }
             if (searchAfter && !_state.value.hasSearched) {
@@ -153,7 +158,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun locate(searchAfter: Boolean = true) {
+    fun locate(searchAfter: Boolean = true, keepZoom: Boolean = false) {
         locateJob?.cancel()
         locateJob = viewModelScope.launch {
             _state.update { it.copy(isLocating = true) }
@@ -161,7 +166,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(isLocating = false) }
             if (location != null) {
                 val center = LatLon(location.latitude, location.longitude)
-                val target = MapTarget(++targetId, center, LOCATED_ZOOM)
+                val target = MapTarget(++targetId, center, if (keepZoom) null else LOCATED_ZOOM)
                 _state.update { it.copy(mapCenter = center, mapTarget = target, message = null) }
                 if (searchAfter) searchHere(center, INITIAL_RADIUS_KM)
             } else {

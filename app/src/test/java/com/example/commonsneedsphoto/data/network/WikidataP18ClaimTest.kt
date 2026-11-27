@@ -1,5 +1,6 @@
 package com.example.commonsneedsphoto.data.network
 
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
@@ -31,5 +32,15 @@ class WikidataP18ClaimTest {
             .jsonPrimitive.content
 
         assertEquals("Example.jpg", value)
+    }
+
+    @Test
+    fun `edit data wraps the claim without a GUID`() {
+        val data = buildP18EditData("Example.jpg")
+        val claim = data["claims"]!!.jsonArray.single().jsonObject
+
+        assertEquals(null, claim["id"])
+        assertEquals("statement", claim["type"]!!.jsonPrimitive.content)
+        assertEquals("P18", claim["mainsnak"]!!.jsonObject["property"]!!.jsonPrimitive.content)
     }
 }

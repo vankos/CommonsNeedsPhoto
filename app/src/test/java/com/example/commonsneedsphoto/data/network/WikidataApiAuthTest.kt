@@ -1,6 +1,10 @@
 package com.example.commonsneedsphoto.data.network
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.CookieJar
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.Dispatcher
@@ -40,9 +44,11 @@ class WikidataApiAuthTest {
             assertEquals(2, commonsCalls.size)
             assertTrue(commonsCalls.all { it.form["action"] == "centralauthtoken" })
 
-            val edit = calls.single { it.wiki == WIKIDATA && it.form["action"] == "wbsetclaim" }
+            val edit = calls.single { it.wiki == WIKIDATA && it.form["action"] == "wbeditentity" }
             assertEquals("ca-2", edit.form["centralauthtoken"])
             assertEquals("csrf-token", edit.form["token"])
+            assertEquals("Q108140508", edit.form["id"])
+            assertEditDataAddsP18(edit.form["data"])
         }
 
     @Test
@@ -50,9 +56,10 @@ class WikidataApiAuthTest {
         withServer(localSessionWorks = true) { api, calls ->
             assertTrue(api.addImageClaim("Q108140508", "Example.jpg"))
 
-            val edit = calls.single { it.wiki == WIKIDATA && it.form["action"] == "wbsetclaim" }
+            val edit = calls.single { it.wiki == WIKIDATA && it.form["action"] == "wbeditentity" }
             assertNull(edit.form["centralauthtoken"])
             assertTrue(calls.none { it.wiki == COMMONS })
+            assertEditDataAddsP18(edit.form["data"])
         }
 
     @Test
@@ -120,8 +127,23 @@ class WikidataApiAuthTest {
                 """{"error":{"code":"assertuserfailed","info":"Anonymous users cannot edit Wikidata."}}"""
             }
         }
-        "wbsetclaim" -> """{"success":1}"""
+        "wbeditentity" -> """{"success":1}"""
         else -> """{}"""
+    }
+
+    /** The edit must add a new claim, which is impossible with `wbsetclaim`. */
+    private fun assertEditDataAddsP18(data: String?) {
+        val claims = Json.parseToJsonElement(data!!)
+            .jsonObject["claims"]!!.jsonArray
+        assertEquals(1, claims.size)
+        val claim = claims.single().jsonObject
+        assertNull("a new claim must not carry a GUID", claim["id"])
+        val mainsnak = claim["mainsnak"]!!.jsonObject
+        assertEquals("P18", mainsnak["property"]!!.jsonPrimitive.content)
+        assertEquals(
+            "Example.jpg",
+            mainsnak["datavalue"]!!.jsonObject["value"]!!.jsonPrimitive.content,
+        )
     }
 
     private fun commonsResponse(

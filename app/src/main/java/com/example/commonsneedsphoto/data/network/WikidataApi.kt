@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -64,10 +65,11 @@ class WikidataApi(
             // needs its own token, fresh from Commons.
             val centralAuthToken = if (auth.usesCentralAuth) fetchCentralAuthToken() else null
             val builder = FormBody.Builder()
-                .add("action", "wbsetclaim")
+                .add("action", "wbeditentity")
                 .add("format", "json")
                 .add("formatversion", "2")
-                .add("claim", buildP18Claim(fileName).toString())
+                .add("id", qid)
+                .add("data", buildP18EditData(fileName).toString())
                 .add("summary", EDIT_SUMMARY)
                 .add("token", auth.csrfToken)
                 .add("assert", "user")
@@ -276,8 +278,25 @@ internal fun parseCentralAuthToken(root: JsonObject): String? =
     }?.takeIf { it.isNotBlank() }
 
 /**
- * The JSON object accepted by `action=wbsetclaim` for a Wikidata image claim.
+ * The `data` payload for `action=wbeditentity` that adds the image as a new
+ * P18 statement.
+ *
+ * `action=wbsetclaim` cannot be used here: it always requires the GUID of the
+ * statement ("GUID must be set when setting a claim") and a new statement has
+ * none yet. `wbeditentity` merges the given claims into the item and lets
+ * Wikibase assign the GUID, which the API documents as the way to create a
+ * claim (`data={"claims":[{…}]}`).
+ *
  * Kept as a pure function so it can be tested without Android or network.
+ */
+internal fun buildP18EditData(fileName: String): JsonObject = buildJsonObject {
+    put("claims", buildJsonArray { add(buildP18Claim(fileName)) })
+}
+
+/**
+ * The JSON representation of a new P18 (image) statement. It carries no `id`:
+ * Wikibase assigns the GUID when the statement is added through
+ * [buildP18EditData].
  */
 internal fun buildP18Claim(fileName: String): JsonObject = buildJsonObject {
     put(

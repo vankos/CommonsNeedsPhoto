@@ -198,12 +198,14 @@ rotation and is shown again when the user returns to the screen.
 3. The completed stash is published with `action=upload&ignorewarnings=1`. Only then is the local
    JPEG deleted.
 4. `WikidataApi.addImageClaim` sets P18 from the published title (underscores converted back to
-   spaces). The published result is saved before that step, so a worker stopped between the
-   Commons upload and the Wikidata edit resumes at P18 instead of uploading a duplicate file. If
-   the stored cookies do not give Wikidata an authenticated session (the usual case for a normal
-   login), the request retries with a fresh one-request `centralauthtoken` from Commons. A Wikidata
-   failure is reported in the sheet and in the result notification, but the work still succeeds
-   because the file is already on Commons.
+   spaces) with `action=wbeditentity&data={"claims":[…]}`: `wbsetclaim` is not usable for a new
+   statement because it requires the statement GUID (“GUID must be set when setting a claim”),
+   while `wbeditentity` lets Wikibase assign it. The published result is saved before that step, so
+   a worker stopped between the Commons upload and the Wikidata edit resumes at P18 instead of
+   uploading a duplicate file. If the stored cookies do not give Wikidata an authenticated session
+   (the usual case for a normal login), the request retries with a fresh one-request
+   `centralauthtoken` from Commons. A Wikidata failure is reported in the sheet and in the result
+   notification, but the work still succeeds because the file is already on Commons.
 
 The foreground notification uses the `dataSync` type; Android 13+ asks for `POST_NOTIFICATIONS`
 when Upload is tapped. If the permission is denied the upload still runs, but progress is visible

@@ -114,6 +114,11 @@ The project has the same tag-driven release setup as the sibling apps: pushing a
 `v2026.11.22` runs `.github/workflows/main.yml`, runs the unit tests, builds an APK and attaches it
 to the GitHub release.
 
+The tag becomes the app's `versionName`, while the version code is built from the date digits and a
+two-digit daily sequence (`v2026.11.28` → `2026112800`, `v2026.11.28.1` → `2026112801`). Android
+compares the code as an integer, so this keeps every release newer than all previous ones even when
+a day has several releases.
+
 For a **signed** release, add `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and
 `KEY_PASSWORD` repository secrets and place `app/my-release-key.jks` in the build. Without those
 secrets the workflow still publishes a release: it builds the **release** variant (the normal

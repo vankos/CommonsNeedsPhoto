@@ -71,8 +71,17 @@ jobs:
           else
             VERSION="$(date +%Y.%m.%d)"
           fi
+          # Android compares versionCode as an integer, so it must grow with every
+          # release. Dropping the dots from the tag is not enough: 2026.11.27.4
+          # becomes 202611274, ten times larger than 2026.11.28's 20261128, and
+          # the installer then refuses the newer release as older. Use the date
+          # digits followed by a two-digit daily sequence instead:
+          # 2026.11.28 -> 2026112800, 2026.11.28.1 -> 2026112801.
+          IFS='.' read -r -a PARTS <<< "$VERSION"
+          DATE_CODE="${PARTS[0]}${PARTS[1]}${PARTS[2]}"
+          SEQUENCE=$((10#${PARTS[3]:-0}))
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "VERSION_CODE=$(echo "$VERSION" | tr -d '.')" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$(printf '%s%02d' "$DATE_CODE" "$SEQUENCE")" >> "$GITHUB_ENV"
 
       - name: Build release APK
         run: ./gradlew :app:assembleRelease -PversionName=${{ env.VERSION }} -PversionCode=${{ env.VERSION_CODE }} --console=plain

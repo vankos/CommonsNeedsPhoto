@@ -105,11 +105,14 @@ class WikidataNearbyRepository(
     }
 
     /**
-     * Adds the `P279` ancestors of every distinct `P31` type in [places], in one
-     * extra request. The query is anchored with `VALUES` on the type QIDs: a
-     * `wdt:P31/wdt:P279*` path joined to every nearby item makes WDQS walk the
-     * class graph per item and run into the query timeout, while the same path
-     * from a fixed list of types is cheap.
+     * Adds the direct `P279` parents and grandparents of every distinct `P31`
+     * type in [places], in one extra request. Two levels cover the usual
+     * exclusion hierarchy (`literary award` -> `award`); the full `P279+`
+     * closure returns tens of thousands of rows for a dense city and does not
+     * finish inside the timeout, which would silently disable the filter.
+     *
+     * The path is anchored with `VALUES` on the type QIDs instead of being
+     * joined to the geo query, where WDQS walks the class graph per item.
      *
      * Best effort, like [withFallbackLabels]: when the request fails the places
      * keep their direct types and are filtered by those only.
@@ -149,7 +152,7 @@ class WikidataNearbyRepository(
         return """
             SELECT DISTINCT ?type ?ancestorLabel WHERE {
               VALUES ?type { $types }
-              ?type wdt:P279+ ?ancestor .
+              ?type wdt:P279/wdt:P279? ?ancestor .
               ?ancestor rdfs:label ?ancestorLabel .
               FILTER(LANG(?ancestorLabel) = "en")
             }

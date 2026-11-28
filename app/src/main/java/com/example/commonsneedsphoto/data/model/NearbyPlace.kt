@@ -16,9 +16,10 @@ data class NearbyPlace(
     val instanceOf: String?,
     val commonsCategory: String?,
     /**
-     * English labels of the [instanceOf] types' `P279` ancestors, comma
-     * separated. Used only by the exclusion categories, never shown, and kept
-     * in the saved snapshot so changing a category still needs no new search.
+     * English labels of the [instanceOf] types' direct `P279` parents and
+     * grandparents, comma separated. Used only by the exclusion categories,
+     * never shown, and kept in the saved snapshot so changing a category still
+     * needs no new search.
      */
     val instanceOfAncestors: String? = null,
     /**

@@ -130,7 +130,7 @@
         <item quantity="other">%1$d категории исключений</item>
     </plurals>
     <string name="settings_exclusion_categories_hint">Точки этих типов объектов Викиданных не показываются на карте и в результатах поиска.</string>
-    <string name="settings_exclusion_categories_explanation">Точка пропускается, если в её поле «тип» (instance of) есть одна из этих английских меток Викиданных. Регистр не важен.</string>
+    <string name="settings_exclusion_categories_explanation">Точка пропускается, если в её поле «тип» (instance of) есть одна из этих английских меток Викиданных или такая метка есть у родительского типа (до двух уровней вверх). Регистр не важен.</string>
     <string name="settings_exclusion_categories_empty">Нет категорий исключений. Показываются все типы Викиданных.</string>
     <string name="settings_exclusion_category_add">Добавить категорию</string>
     <string name="settings_exclusion_category_new">Новая категория</string>

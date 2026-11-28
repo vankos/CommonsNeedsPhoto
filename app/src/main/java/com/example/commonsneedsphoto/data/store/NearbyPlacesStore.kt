@@ -36,8 +36,8 @@ data class NearbyPlacesSnapshot(
     }
 
     companion object {
-        /** Version 2 added the `P279` ancestor labels of the place types. */
-        const val CURRENT_VERSION = 2
+        /** Version 3 limited the `P279` lookup to the parents and grandparents. */
+        const val CURRENT_VERSION = 3
         const val LEGACY_VERSION = 1
         const val TTL_MILLIS = 24L * 60 * 60 * 1000
     }

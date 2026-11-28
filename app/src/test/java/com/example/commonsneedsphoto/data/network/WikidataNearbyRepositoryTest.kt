@@ -30,11 +30,11 @@ class WikidataNearbyRepositoryTest {
     }
 
     @Test
-    fun `ancestor query walks P279 from the given type qids`() {
+    fun `ancestor query walks two P279 levels from the given type qids`() {
         val query = repository.buildAncestorQuery(listOf("Q378427", "Q618779"))
 
         assertTrue(query.contains("VALUES ?type { wd:Q378427 wd:Q618779 }"))
-        assertTrue(query.contains("?type wdt:P279+ ?ancestor"))
+        assertTrue(query.contains("?type wdt:P279/wdt:P279? ?ancestor"))
         assertTrue(query.contains("FILTER(LANG(?ancestorLabel) = \"en\")"))
     }
 

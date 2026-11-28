@@ -6,12 +6,14 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NearbyPlacesSnapshotTest {
 
     private val now = 1_700_000_000_000L
+    private val json = Json { ignoreUnknownKeys = true }
 
     @Test
     fun `points from the last day are usable`() {
@@ -36,10 +38,44 @@ class NearbyPlacesSnapshotTest {
 
     @Test
     fun `snapshot survives a json round trip`() {
-        val json = Json { ignoreUnknownKeys = true }
         val original = snapshot(now)
         val restored = json.decodeFromString<NearbyPlacesSnapshot>(json.encodeToString(original))
         assertEquals(original, restored)
+    }
+
+    @Test
+    fun `a snapshot saved before ancestors existed still decodes`() {
+        val stored = """
+            {
+              "savedAtMillis": 1700000000000,
+              "searchedCenter": {"latitude": 44.4268, "longitude": 26.1025},
+              "radiusKm": 5.0,
+              "places": [
+                {
+                  "qid": "Q1",
+                  "label": "Old tower",
+                  "description": null,
+                  "latitude": 44.4268,
+                  "longitude": 26.1025,
+                  "instanceOf": "tower",
+                  "commonsCategory": null
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val snapshot = json.decodeFromString<NearbyPlacesSnapshot>(stored)
+
+        assertNull(snapshot.places.single().instanceOfAncestors)
+    }
+
+    @Test
+    fun `search-time type qids are not written to the snapshot`() {
+        val place = snapshot(now).places.single().copy(typeQids = listOf("Q378427"))
+
+        val encoded = json.encodeToString(place)
+
+        assertFalse(encoded.contains("typeQids"))
     }
 
     private fun snapshot(savedAtMillis: Long) = NearbyPlacesSnapshot(

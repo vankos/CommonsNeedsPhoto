@@ -1,6 +1,7 @@
 package com.example.commonsneedsphoto.data.model
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /**
  * A Wikidata item that has coordinates but no image (P18) on Wikimedia Commons.
@@ -14,6 +15,19 @@ data class NearbyPlace(
     val longitude: Double,
     val instanceOf: String?,
     val commonsCategory: String?,
+    /**
+     * English labels of the [instanceOf] types' `P279` ancestors, comma
+     * separated. Used only by the exclusion categories, never shown, and kept
+     * in the saved snapshot so changing a category still needs no new search.
+     */
+    val instanceOfAncestors: String? = null,
+    /**
+     * QIDs of the direct `P31` types, filled by the nearby query so their
+     * ancestors can be resolved in one batch. This is search-time data only and
+     * is not written to the saved snapshot.
+     */
+    @Transient
+    val typeQids: List<String> = emptyList(),
 ) {
     val wikidataUrl: String
         get() = "https://www.wikidata.org/wiki/$qid"

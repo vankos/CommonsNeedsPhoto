@@ -15,6 +15,8 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import java.io.IOException
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 /**
  * Runs the same "Wikidata items without a photo" SPARQL query that the
@@ -22,8 +24,27 @@ import java.util.Locale
  */
 class WikidataNearbyRepository(
     private val httpClient: okhttp3.OkHttpClient = Network.client,
+    private val sparqlUrl: String = "https://query.wikidata.org/sparql",
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    /**
+     * `type QID -> P279 ancestor labels`, shared by all searches in this
+     * process. Wikidata classes change slowly and the same types repeat across
+     * nearby searches, so only types that were never seen before are queried.
+     */
+    private val ancestorCache = ConcurrentHashMap<String, List<String>>()
+
+    /**
+     * Ancestors are an enhancement, so their request is capped instead of using
+     * the shared client's 60 s read timeout: a slow WDQS must not turn a nearby
+     * search into a minute-long wait. A timeout falls back to direct types.
+     */
+    private val ancestorHttpClient: okhttp3.OkHttpClient by lazy {
+        httpClient.newBuilder()
+            .callTimeout(ANCESTOR_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .build()
+    }
 
     suspend fun findPlacesWithoutPhoto(
         center: LatLon,
@@ -31,11 +52,15 @@ class WikidataNearbyRepository(
         limit: Int = 500,
     ): List<NearbyPlace> = withContext(Dispatchers.IO) {
         val query = buildQuery(center, radiusKm, limit)
-        withFallbackLabels(parse(sparqlRequest(query)))
+        val places = parse(sparqlRequest(query))
+        withFallbackLabels(withAncestorTypes(places))
     }
 
-    private fun sparqlRequest(query: String): String {
-        val url = "https://query.wikidata.org/sparql".toHttpUrl().newBuilder()
+    private fun sparqlRequest(
+        query: String,
+        client: okhttp3.OkHttpClient = httpClient,
+    ): String {
+        val url = sparqlUrl.toHttpUrl().newBuilder()
             .addQueryParameter("query", query)
             .addQueryParameter("format", "json")
             .build()
@@ -44,7 +69,7 @@ class WikidataNearbyRepository(
             .header("Accept", "application/sparql-results+json")
             .header("User-Agent", Network.USER_AGENT)
             .build()
-        httpClient.newCall(request).execute().use { response ->
+        client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throw IOException("Wikidata query failed (HTTP ${response.code})")
             }
@@ -77,6 +102,97 @@ class WikidataNearbyRepository(
             return places
         }
         return applyFallbackLabels(places, labels)
+    }
+
+    /**
+     * Adds the `P279` ancestors of every distinct `P31` type in [places], in one
+     * extra request. The query is anchored with `VALUES` on the type QIDs: a
+     * `wdt:P31/wdt:P279*` path joined to every nearby item makes WDQS walk the
+     * class graph per item and run into the query timeout, while the same path
+     * from a fixed list of types is cheap.
+     *
+     * Best effort, like [withFallbackLabels]: when the request fails the places
+     * keep their direct types and are filtered by those only.
+     */
+    private fun withAncestorTypes(places: List<NearbyPlace>): List<NearbyPlace> {
+        val types = places.asSequence()
+            .flatMap { it.typeQids.asSequence() }
+            .distinct()
+            .toList()
+        if (types.isEmpty()) return places
+        val unknown = types.filterNot(ancestorCache::containsKey)
+        if (unknown.isNotEmpty()) {
+            try {
+                ancestorCache.putAll(fetchAncestors(unknown))
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                // Keep the direct types; the filter still works without ancestors.
+            }
+        }
+        return applyAncestors(places, ancestorCache)
+    }
+
+    private fun fetchAncestors(typeQids: List<String>): Map<String, List<String>> {
+        val ancestors = LinkedHashMap<String, List<String>>()
+        for (chunk in typeQids.chunked(MAX_TYPES_PER_ANCESTOR_REQUEST)) {
+            ancestors += parseAncestors(
+                sparqlRequest(buildAncestorQuery(chunk), ancestorHttpClient),
+                chunk,
+            )
+        }
+        return ancestors
+    }
+
+    internal fun buildAncestorQuery(typeQids: List<String>): String {
+        val types = typeQids.joinToString(" ") { "wd:$it" }
+        return """
+            SELECT DISTINCT ?type ?ancestorLabel WHERE {
+              VALUES ?type { $types }
+              ?type wdt:P279+ ?ancestor .
+              ?ancestor rdfs:label ?ancestorLabel .
+              FILTER(LANG(?ancestorLabel) = "en")
+            }
+        """.trimIndent()
+    }
+
+    /**
+     * Parses a [buildAncestorQuery] response into `type QID -> ancestor labels`.
+     * Every requested type gets an entry, even an empty one, so the cache can
+     * tell "no ancestors" from "never looked up".
+     */
+    internal fun parseAncestors(
+        body: String,
+        requested: List<String>,
+    ): Map<String, List<String>> {
+        val ancestors = requested.associateWith { LinkedHashSet<String>() }
+        val root = json.parseToJsonElement(body).jsonObject
+        val bindings = root["results"]?.jsonObject?.get("bindings")?.jsonArray
+        if (bindings == null) return requested.associateWith { emptyList<String>() }
+        for (element in bindings) {
+            val binding = element.jsonObject
+            val typeUri = binding["type"]?.jsonObject?.value("value") ?: continue
+            val label = binding["ancestorLabel"]?.jsonObject?.value("value")
+                ?.takeIf { it.isNotBlank() }
+                ?: continue
+            ancestors[typeUri.substringAfterLast('/')]?.add(label)
+        }
+        return ancestors.mapValues { it.value.toList() }
+    }
+
+    /** Copies [places], storing the distinct ancestor labels of their types. */
+    internal fun applyAncestors(
+        places: List<NearbyPlace>,
+        ancestorsByType: Map<String, List<String>>,
+    ): List<NearbyPlace> = places.map { place ->
+        val ancestors = place.typeQids
+            .flatMap { ancestorsByType[it].orEmpty() }
+            .distinct()
+        if (ancestors.isEmpty()) {
+            place
+        } else {
+            place.copy(instanceOfAncestors = ancestors.joinToString(", "))
+        }
     }
 
     /**
@@ -141,6 +257,7 @@ class WikidataNearbyRepository(
             SELECT ?q ?qLabel ?desc ?location
                    (SAMPLE(?category) AS ?commonsCategory)
                    (GROUP_CONCAT(DISTINCT ?instanceOfLabel; separator=", ") AS ?instanceOfLabels)
+                   (GROUP_CONCAT(DISTINCT STR(?instanceOf); separator=" ") AS ?instanceOfQids)
             WHERE {
               SERVICE wikibase:around {
                 ?q wdt:P625 ?location .
@@ -153,8 +270,10 @@ class WikidataNearbyRepository(
               OPTIONAL { ?q wdt:P373 ?category }
               OPTIONAL {
                 ?q wdt:P31 ?instanceOf .
-                ?instanceOf rdfs:label ?instanceOfLabel .
-                FILTER(LANG(?instanceOfLabel) = "en")
+                OPTIONAL {
+                  ?instanceOf rdfs:label ?instanceOfLabel .
+                  FILTER(LANG(?instanceOfLabel) = "en")
+                }
               }
               SERVICE wikibase:label {
                 bd:serviceParam wikibase:language "$labelLanguages" .
@@ -190,6 +309,12 @@ class WikidataNearbyRepository(
                     ?.takeIf { it.isNotBlank() },
                 commonsCategory = binding["commonsCategory"]?.jsonObject?.value("value")
                     ?.takeIf { it.isNotBlank() },
+                typeQids = binding["instanceOfQids"]?.jsonObject?.value("value")
+                    ?.split(' ')
+                    ?.map { it.substringAfterLast('/') }
+                    ?.filter { it.isNotBlank() }
+                    ?.distinct()
+                    .orEmpty(),
             )
         }
         return places
@@ -212,6 +337,12 @@ class WikidataNearbyRepository(
 
         /** The `wbgetentities` action accepts at most 50 IDs per request. */
         const val MAX_IDS_PER_LABEL_REQUEST = 50
+
+        /** Keeps the `VALUES` list, and the GET URL that carries it, short. */
+        const val MAX_TYPES_PER_ANCESTOR_REQUEST = 200
+
+        /** Bounds the wait for the optional ancestor request. */
+        const val ANCESTOR_TIMEOUT_SECONDS = 10L
     }
 }
 

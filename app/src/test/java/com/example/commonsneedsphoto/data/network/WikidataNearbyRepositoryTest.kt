@@ -2,6 +2,11 @@ package com.example.commonsneedsphoto.data.network
 
 import com.example.commonsneedsphoto.data.model.LatLon
 import com.example.commonsneedsphoto.data.model.NearbyPlace
+import com.example.commonsneedsphoto.data.store.ExclusionCategories
+import kotlinx.coroutines.runBlocking
+import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -20,6 +25,119 @@ class WikidataNearbyRepositoryTest {
         assertTrue(query.contains("wikibase:radius \"5.00\""))
         assertTrue(query.contains("LIMIT 500"))
         assertTrue(query.contains("?q wdt:P373 ?category"))
+        assertTrue(query.contains("STR(?instanceOf)"))
+        assertTrue(query.contains("AS ?instanceOfQids"))
+    }
+
+    @Test
+    fun `ancestor query walks P279 from the given type qids`() {
+        val query = repository.buildAncestorQuery(listOf("Q378427", "Q618779"))
+
+        assertTrue(query.contains("VALUES ?type { wd:Q378427 wd:Q618779 }"))
+        assertTrue(query.contains("?type wdt:P279+ ?ancestor"))
+        assertTrue(query.contains("FILTER(LANG(?ancestorLabel) = \"en\")"))
+    }
+
+    @Test
+    fun `parseAncestors groups labels by type and keeps empty entries`() {
+        val json = """
+            {
+              "results": {
+                "bindings": [
+                  {
+                    "type": {"type": "uri", "value": "http://www.wikidata.org/entity/Q378427"},
+                    "ancestorLabel": {"type": "literal", "value": "award"}
+                  },
+                  {
+                    "type": {"type": "uri", "value": "http://www.wikidata.org/entity/Q378427"},
+                    "ancestorLabel": {"type": "literal", "value": "planned event"}
+                  }
+                ]
+              }
+            }
+        """.trimIndent()
+
+        val ancestors = repository.parseAncestors(json, listOf("Q378427", "Q618779"))
+
+        assertEquals(listOf("award", "planned event"), ancestors["Q378427"])
+        assertEquals(emptyList<String>(), ancestors["Q618779"])
+    }
+
+    @Test
+    fun `applyAncestors stores distinct labels of all place types`() {
+        val place = NearbyPlace(
+            qid = "Q1",
+            label = "Literary prize",
+            description = null,
+            latitude = 44.4268,
+            longitude = 26.1025,
+            instanceOf = "literary award",
+            commonsCategory = null,
+            typeQids = listOf("Q378427", "Q618779"),
+        )
+
+        val places = repository.applyAncestors(
+            listOf(place),
+            mapOf(
+                "Q378427" to listOf("award", "planned event"),
+                "Q618779" to listOf("award"),
+            ),
+        )
+
+        assertEquals("award, planned event", places.single().instanceOfAncestors)
+        assertTrue(ExclusionCategories(listOf("award")).excludes(places.single()))
+    }
+
+    @Test
+    fun `ancestors are requested once per type and reused by the next search`() = runBlocking {
+        val place = """
+            {
+              "results": {
+                "bindings": [
+                  {
+                    "q": {"type": "uri", "value": "http://www.wikidata.org/entity/Q123"},
+                    "qLabel": {"type": "literal", "value": "Literary prize"},
+                    "location": {"type": "literal", "value": "Point(26.1025 44.4268)"},
+                    "instanceOfLabels": {"type": "literal", "value": "literary award"},
+                    "instanceOfQids": {"type": "literal", "value": "http://www.wikidata.org/entity/Q378427"}
+                  }
+                ]
+              }
+            }
+        """.trimIndent()
+        val ancestors = """
+            {
+              "results": {
+                "bindings": [
+                  {
+                    "type": {"type": "uri", "value": "http://www.wikidata.org/entity/Q378427"},
+                    "ancestorLabel": {"type": "literal", "value": "award"}
+                  }
+                ]
+              }
+            }
+        """.trimIndent()
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setBody(place))
+        server.enqueue(MockResponse().setBody(ancestors))
+        server.enqueue(MockResponse().setBody(place))
+        server.start()
+
+        try {
+            val repository = WikidataNearbyRepository(
+                httpClient = OkHttpClient(),
+                sparqlUrl = server.url("/sparql").toString(),
+            )
+
+            val first = repository.findPlacesWithoutPhoto(LatLon(44.4268, 26.1025), 5.0)
+            val second = repository.findPlacesWithoutPhoto(LatLon(44.4268, 26.1025), 5.0)
+
+            assertEquals("award", first.single().instanceOfAncestors)
+            assertEquals("award", second.single().instanceOfAncestors)
+            assertEquals(3, server.requestCount)
+        } finally {
+            server.shutdown()
+        }
     }
 
     @Test
@@ -35,7 +153,8 @@ class WikidataNearbyRepositoryTest {
                     "desc": {"xml:lang": "en", "type": "literal", "value": "tower in Testville"},
                     "location": {"type": "literal", "value": "Point(26.1025 44.4268)"},
                     "commonsCategory": {"type": "literal", "value": "Old Tower"},
-                    "instanceOfLabels": {"type": "literal", "value": "tower, building"}
+                    "instanceOfLabels": {"type": "literal", "value": "tower, building"},
+                    "instanceOfQids": {"type": "literal", "value": "http://www.wikidata.org/entity/Q12518 http://www.wikidata.org/entity/Q41176"}
                   }
                 ]
               }
@@ -53,6 +172,8 @@ class WikidataNearbyRepositoryTest {
         assertEquals(26.1025, place.longitude, 0.000001)
         assertEquals("Old Tower", place.commonsCategory)
         assertEquals("tower, building", place.instanceOf)
+        assertEquals(listOf("Q12518", "Q41176"), place.typeQids)
+        assertNull(place.instanceOfAncestors)
     }
 
     @Test

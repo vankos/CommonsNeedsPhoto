@@ -9,8 +9,8 @@ import kotlinx.serialization.json.Json
 /**
  * Wikidata type labels ("instance of") whose places are left out of the map and
  * search results. Values are kept lower case and in English, the language the
- * nearby query asks the type labels in, so [NearbyPlace.instanceOf] can be
- * compared with them directly.
+ * nearby query asks the type labels in, so [NearbyPlace.instanceOf] and
+ * [NearbyPlace.instanceOfAncestors] can be compared with them directly.
  *
  * The defaults are the ones the neighbouring StuffAround app ships with: a photo
  * of a hotel room or of a whole quarter is not what the needs-photo list is for.
@@ -34,15 +34,21 @@ data class ExclusionCategories(
         return copy(categories = categories.filterNot { it == normalized })
     }
 
-    /** True when [place] is an instance of at least one excluded category. */
+    /**
+     * True when [place] is an instance of at least one excluded category, either
+     * directly or through a `P279` ancestor of one of its types.
+     */
     fun excludes(place: NearbyPlace): Boolean {
         if (categories.isEmpty()) return false
-        val instanceOf = place.instanceOf ?: return false
-        return instanceOf
-            .split(',')
-            .map(::normalize)
-            .any(categories::contains)
+        return matches(place.instanceOf) || matches(place.instanceOfAncestors)
     }
+
+    private fun matches(labels: String?): Boolean =
+        labels
+            ?.split(',')
+            ?.map(::normalize)
+            ?.any(categories::contains)
+            ?: false
 
     /** The part of [places] that is not excluded by a category, in the original order. */
     fun visible(places: List<NearbyPlace>): List<NearbyPlace> =

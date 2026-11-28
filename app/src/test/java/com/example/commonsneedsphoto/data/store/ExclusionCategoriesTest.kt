@@ -54,6 +54,21 @@ class ExclusionCategoriesTest {
     }
 
     @Test
+    fun `a category matches a P279 ancestor of a type`() {
+        val categories = ExclusionCategories(listOf("award"))
+        assertTrue(
+            categories.excludes(
+                place("Q1", "literary award", ancestors = "award, planned event"),
+            ),
+        )
+        assertFalse(
+            categories.excludes(
+                place("Q2", "literary award", ancestors = "planned event"),
+            ),
+        )
+    }
+
+    @Test
     fun `adding a category trims and lower-cases it`() {
         val categories = ExclusionCategories().add("  Guest House  ")
         assertEquals(listOf("guest house"), categories.categories)
@@ -94,7 +109,11 @@ class ExclusionCategoriesTest {
         assertEquals(listOf("hotel", "quarter"), categories.categories)
     }
 
-    private fun place(qid: String, instanceOf: String?) = NearbyPlace(
+    private fun place(
+        qid: String,
+        instanceOf: String?,
+        ancestors: String? = null,
+    ) = NearbyPlace(
         qid = qid,
         label = qid,
         description = null,
@@ -102,5 +121,6 @@ class ExclusionCategoriesTest {
         longitude = 26.1025,
         instanceOf = instanceOf,
         commonsCategory = null,
+        instanceOfAncestors = ancestors,
     )
 }

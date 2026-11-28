@@ -56,8 +56,9 @@ flows are implemented — there are no Explore/Bookmarks/Contributions tabs.
   preference file (`ignored_places`) and survive restarts. The second setting lists the
   **exclusion categories** — Wikidata “instance of” types such as hotel, quarter or siege whose
   places are skipped; the list starts with the same ten defaults as the StuffAround app and can
-  be edited. The saved search snapshot still contains the excluded points, so restoring one or
-  removing a category needs no new query.
+  be edited. A type also matches through its `P279` ancestors, so excluding “award” hides
+  “literary award” too. The saved search snapshot still contains the excluded points and their
+  ancestor labels, so restoring one or removing a category needs no new query.
 * **Real Commons upload, in 512 KB chunks.** The upload uses the MediaWiki API directly:
   `action=query&meta=tokens&type=csrf` → `action=upload&stash=1&ignorewarnings=1` for every
   512 KB chunk → `action=upload` with the returned `filekey` to publish the finished stash and a
@@ -196,7 +197,7 @@ app/src/main/java/com/example/commonsneedsphoto/
 ├── data/
 │   ├── model/                     NearbyPlace, LatLon, haversine distance
 │   ├── network/
-│   │   ├── WikidataNearbyRepository.kt  SPARQL query, label fallback and parser
+│   │   ├── WikidataNearbyRepository.kt  SPARQL queries, label fallback, P279 ancestors, parser
 │   │   ├── CommonsApi.kt               login, CSRF, unique name, chunk stash + publish
 │   │   ├── WikidataApi.kt              P18 claim, CentralAuth token, bot-password sign-in
 │   │   ├── CommonsSession.kt           persistent OkHttp CookieJar
@@ -378,8 +379,13 @@ Excluded places are listed separately in `ignored_places` (`IgnoredPlacesStore`)
 exclusion categories in `exclusion_categories` (`ExclusionCategoriesStore`). The snapshot keeps
 the places both mechanisms hide, so an old result with excluded points still counts as usable;
 the map and the place count show only the places that are neither excluded individually nor by
-type. The category filter compares the lower-cased English `P31` labels the query already asks
-for, on the device, so changing a category does not run a new query.
+type. The category filter compares the lower-cased English `P31` labels, on the device, so
+changing a category does not run a new query. After the nearby query the app also resolves the
+`P279` ancestors of every distinct `P31` type in one extra SPARQL request (`VALUES` on the type
+QIDs plus `wdt:P279+`; the same path joined to the geo query times out on WDQS) and stores the
+ancestor labels on each place in the snapshot. That is what makes “award” hide “literary award”.
+The type-to-ancestors lookup is cached for the life of the process, so only a type never seen
+before costs a request.
 
 Map tiles come from OpenStreetMap and are displayed with attribution. The app sets a descriptive
 User-Agent for osmdroid and should not be used for bulk tile downloads.

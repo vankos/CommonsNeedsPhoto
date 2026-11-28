@@ -67,8 +67,6 @@ import coil.compose.AsyncImage
 import com.example.commonsneedsphoto.R
 import com.example.commonsneedsphoto.data.model.LatLon
 import com.example.commonsneedsphoto.data.upload.UploadLicense
-import java.util.Locale
-import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -637,12 +635,6 @@ private fun UploadSuccessContent(
             Text(stringResource(R.string.done))
         }
     }
-}
-
-private fun formatDistance(meters: Double): String = if (meters < 1000.0) {
-    "${meters.roundToInt()} m"
-} else {
-    String.format(Locale.getDefault(), "%.1f km", meters / 1000.0)
 }
 
 @Composable

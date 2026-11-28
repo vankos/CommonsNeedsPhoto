@@ -9,6 +9,13 @@
         <item quantity="many">%1$d мест без фотографии</item>
         <item quantity="other">%1$d места без фотографии</item>
     </plurals>
+    <plurals name="cluster_places">
+        <item quantity="one">%1$d место в этом кластере</item>
+        <item quantity="few">%1$d места в этом кластере</item>
+        <item quantity="many">%1$d мест в этом кластере</item>
+        <item quantity="other">%1$d места в этом кластере</item>
+    </plurals>
+    <string name="cluster_places_hint">Эти точки слишком близко, чтобы разделить их увеличением. Выберите место:</string>
     <string name="nearby_loading">Ищем места без фотографии…</string>
     <string name="locating">Определяем местоположение…</string>
     <string name="nearby_empty">Здесь нет мест без фотографии. Попробуйте другую область.</string>

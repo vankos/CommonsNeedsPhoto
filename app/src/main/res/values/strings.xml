@@ -7,6 +7,11 @@
         <item quantity="one">%1$d place without a photo</item>
         <item quantity="other">%1$d places without a photo</item>
     </plurals>
+    <plurals name="cluster_places">
+        <item quantity="one">%1$d place in this cluster</item>
+        <item quantity="other">%1$d places in this cluster</item>
+    </plurals>
+    <string name="cluster_places_hint">These points are too close to separate by zooming in. Pick one:</string>
     <string name="nearby_loading">Looking for places without a photo…</string>
     <string name="locating">Locating…</string>
     <string name="nearby_empty">No places without a photo found here. Try another area.</string>

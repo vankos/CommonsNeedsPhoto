@@ -15,7 +15,9 @@ flows are implemented — there are no Explore/Bookmarks/Contributions tabs.
 * **Map of places without a photo.** The app runs the same kind of Wikidata SPARQL query as the
   original Commons app (`wikibase:around` + `FILTER NOT EXISTS { ?q wdt:P18 ?image }`) and shows
   the results on an OpenStreetMap map. Dense areas are clustered by screen cells; tapping a cluster
-  zooms in, tapping a single pin opens the upload dialog.
+  zooms in, tapping a single pin opens the upload dialog. A cluster whose points sit too close to
+  separate even at the maximum zoom (several items on one coordinate, for example) opens a sheet
+  listing those places instead, so its pins are always reachable.
 * **Manual refresh.** Panning and zooming keep the last result set and do **not** issue a query.
   The **Search this area** button appears when the map centre moves more than 250 m from the last
   searched centre. The **My location** button only recentres the map at the zoom level you have

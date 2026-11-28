@@ -12,6 +12,7 @@ import android.graphics.Typeface
 import android.view.MotionEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,15 +21,19 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -38,7 +43,9 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -46,6 +53,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -61,6 +69,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -85,6 +94,7 @@ import org.osmdroid.views.overlay.CopyrightOverlay
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
+import kotlin.math.pow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -207,6 +217,7 @@ fun MapScreen(viewModel: MainViewModel) {
                 hasLocationPermission = hasLocationPermission,
                 onMapMoved = viewModel::onMapMoved,
                 onPlaceTap = viewModel::onPlaceSelected,
+                onClusterTap = viewModel::showCluster,
             )
 
             if (state.isLoading) {
@@ -359,6 +370,15 @@ fun MapScreen(viewModel: MainViewModel) {
         )
     }
 
+    state.clusterPlaces?.let { clusterPlaces ->
+        ClusterSheet(
+            places = clusterPlaces,
+            origin = state.mapCenter,
+            onPlaceTap = viewModel::onPlaceSelected,
+            onDismiss = viewModel::dismissCluster,
+        )
+    }
+
     state.upload?.let { upload ->
         UploadSheet(
             state = upload,
@@ -465,6 +485,94 @@ private fun AccountDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ClusterSheet(
+    places: List<NearbyPlace>,
+    origin: LatLon,
+    onPlaceTap: (NearbyPlace) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sorted = remember(places) {
+        places.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = { BottomSheetDefaults.DragHandle() },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .padding(bottom = 16.dp),
+        ) {
+            Text(
+                text = pluralStringResource(R.plurals.cluster_places, places.size, places.size),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.cluster_places_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
+            Spacer(Modifier.height(8.dp))
+            for (place in sorted) {
+                ClusterPlaceRow(
+                    place = place,
+                    origin = origin,
+                    onClick = { onPlaceTap(place) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClusterPlaceRow(
+    place: NearbyPlace,
+    origin: LatLon,
+    onClick: () -> Unit,
+) {
+    ListItem(
+        headlineContent = {
+            Text(
+                text = place.label,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        supportingContent = when {
+            place.description != null -> {
+                { Text(place.description, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            }
+            place.instanceOf != null -> {
+                {
+                    Text(
+                        text = stringResource(R.string.place_instance_of, place.instanceOf),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            else -> null
+        },
+        trailingContent = {
+            Text(
+                text = formatDistance(place.distanceMeters(origin.latitude, origin.longitude)),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        modifier = Modifier.clickable(onClick = onClick),
+    )
+}
+
 @Composable
 private fun NearbyMap(
     initialCenter: LatLon,
@@ -473,6 +581,7 @@ private fun NearbyMap(
     hasLocationPermission: Boolean,
     onMapMoved: (LatLon, Double) -> Unit,
     onPlaceTap: (NearbyPlace) -> Unit,
+    onClusterTap: (List<NearbyPlace>) -> Unit,
 ) {
     val holder = remember { OsmMapHolder() }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -488,18 +597,7 @@ private fun NearbyMap(
                 val markers = NearbyMarkersOverlay(
                     context = context,
                     onPlaceTap = onPlaceTap,
-                    onClusterTap = cluster@{ clusterPlaces ->
-                        val map = holder.mapView ?: return@cluster
-                        if (clusterPlaces.isNotEmpty()) {
-                            val latitude = clusterPlaces.sumOf { it.latitude } / clusterPlaces.size
-                            val longitude = clusterPlaces.sumOf { it.longitude } / clusterPlaces.size
-                            map.controller.animateTo(
-                                GeoPoint(latitude, longitude),
-                                (map.zoomLevelDouble + 2.0).coerceAtMost(19.0),
-                                MAP_ANIMATION_MS,
-                            )
-                        }
-                    },
+                    onClusterTap = onClusterTap,
                 )
                 overlays.add(markers)
                 overlays.add(CopyrightOverlay(context))
@@ -611,11 +709,17 @@ private class OsmMapHolder {
 
 private const val VIEWPORT_DEBOUNCE_MS = 400L
 private const val MAP_ANIMATION_MS = 700L
+private const val MAX_MAP_ZOOM = 19.0
+private const val CLUSTER_ZOOM_STEP = 2.0
 
 /**
  * Draws clustered pins directly on the canvas. Points are grouped by screen
  * cells, so a dense city does not turn into a wall of overlapping pins; taps
  * on a cluster zoom in, taps on a single pin open the upload sheet.
+ *
+ * A cluster whose points even the maximum zoom cannot pull apart (several items
+ * share one coordinate, for example) would never open by zooming, so a tap on it
+ * calls [onClusterTap] and the screen lists those places instead.
  */
 private class NearbyMarkersOverlay(
     context: Context,
@@ -714,10 +818,47 @@ private class NearbyMarkersOverlay(
         val found = closestPlaces ?: return false
         if (found.size == 1) {
             onPlaceTap(found.first())
+        } else if (canSplitByZoom(mapView, found)) {
+            val latitude = found.sumOf { it.latitude } / found.size
+            val longitude = found.sumOf { it.longitude } / found.size
+            mapView.controller.animateTo(
+                GeoPoint(latitude, longitude),
+                (mapView.zoomLevelDouble + CLUSTER_ZOOM_STEP).coerceAtMost(MAX_MAP_ZOOM),
+                MAP_ANIMATION_MS,
+            )
         } else {
             onClusterTap(found)
         }
         return true
+    }
+
+    /**
+     * Zooming helps only when the points can end up in different screen cells.
+     * At the maximum zoom a cell is [cellSizePx] wide, so a spread wider than
+     * one cell on either axis separates the pins; anything tighter stays one
+     * bubble, and the caller should list the places instead.
+     */
+    private fun canSplitByZoom(mapView: MapView, cluster: List<NearbyPlace>): Boolean {
+        val zoom = mapView.zoomLevelDouble
+        if (zoom >= MAX_MAP_ZOOM) return false
+        val scale = 2.0.pow(MAX_MAP_ZOOM - zoom).toFloat()
+        var minX = Float.MAX_VALUE
+        var maxX = -Float.MAX_VALUE
+        var minY = Float.MAX_VALUE
+        var maxY = -Float.MAX_VALUE
+        for (place in cluster) {
+            mapView.projection.toPixels(
+                GeoPoint(place.latitude, place.longitude),
+                reusablePoint,
+            )
+            val x = reusablePoint.x * scale
+            val y = reusablePoint.y * scale
+            if (x < minX) minX = x
+            if (x > maxX) maxX = x
+            if (y < minY) minY = y
+            if (y > maxY) maxY = y
+        }
+        return maxX - minX > cellSizePx || maxY - minY > cellSizePx
     }
 
     private fun buildClusters(mapView: MapView): List<Cluster> {

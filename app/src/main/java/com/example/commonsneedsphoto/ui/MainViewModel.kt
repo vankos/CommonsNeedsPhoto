@@ -106,6 +106,8 @@ data class MainUiState(
     val showSearchHere: Boolean = false,
     val hasSearched: Boolean = false,
     val mapTarget: MapTarget? = null,
+    /** Places of a tapped cluster that zooming in cannot split into separate pins. */
+    val clusterPlaces: List<NearbyPlace>? = null,
     val userName: String? = null,
     val showLogin: Boolean = false,
     val login: LoginUiState = LoginUiState(),
@@ -241,6 +243,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         mapCenter = center,
                         showSearchHere = false,
                         error = null,
+                        clusterPlaces = null,
                     )
                 }
             } catch (cancel: CancellationException) {
@@ -355,9 +358,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     description = description,
                     category = place.commonsCategory.orEmpty(),
                 ),
+                clusterPlaces = null,
                 editor = null,
             )
         }
+    }
+
+    /** Lists the places of a cluster that no amount of zooming can split into single pins. */
+    fun showCluster(places: List<NearbyPlace>) {
+        _state.update { it.copy(clusterPlaces = places) }
+    }
+
+    fun dismissCluster() {
+        _state.update { it.copy(clusterPlaces = null) }
     }
 
     fun dismissUpload() {

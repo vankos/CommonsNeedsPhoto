@@ -372,8 +372,10 @@ therefore still shown with a readable name instead of `Q108142865`. The extra lo
 effort: if it fails, the QID stays.
 
 The last successful result is kept in the private `nearby_cache` preference file
-(`NearbyPlacesStore`). A snapshot is reused only while it is less than a day old; a stale or
-unreadable one is deleted on the next start, which then runs the query again.
+(`NearbyPlacesStore`). A snapshot is reused only while it is less than a day old and matches the
+current layout version; a stale, unreadable or old-layout one is deleted on the next start, which
+then runs the query again. The layout version was bumped when the exclusion filter gained ancestor
+labels, so an update refreshes the saved result once instead of filtering with missing data.
 
 Excluded places are listed separately in `ignored_places` (`IgnoredPlacesStore`) and the
 exclusion categories in `exclusion_categories` (`ExclusionCategoriesStore`). The snapshot keeps

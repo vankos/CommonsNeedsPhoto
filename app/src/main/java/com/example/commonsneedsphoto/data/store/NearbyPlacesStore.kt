@@ -21,14 +21,24 @@ data class NearbyPlacesSnapshot(
     val searchedCenter: LatLon,
     val radiusKm: Double,
     val places: List<NearbyPlace>,
+    /**
+     * Layout of the saved places. Bumped when a snapshot needs data that older
+     * versions did not write, so an upgrade drops the old snapshot and searches
+     * again instead of filtering with fields that are silently missing.
+     */
+    val version: Int = LEGACY_VERSION,
 ) {
     fun isUsable(now: Long = System.currentTimeMillis()): Boolean {
+        if (version != CURRENT_VERSION) return false
         if (places.isEmpty()) return false
         // A negative age means the device clock moved backwards; the points are still recent.
         return now - savedAtMillis < TTL_MILLIS
     }
 
     companion object {
+        /** Version 2 added the `P279` ancestor labels of the place types. */
+        const val CURRENT_VERSION = 2
+        const val LEGACY_VERSION = 1
         const val TTL_MILLIS = 24L * 60 * 60 * 1000
     }
 }
@@ -58,8 +68,9 @@ class NearbyPlacesStore(context: Context) {
     }
 
     fun save(snapshot: NearbyPlacesSnapshot) {
+        val current = snapshot.copy(version = NearbyPlacesSnapshot.CURRENT_VERSION)
         prefs.edit()
-            .putString(KEY_SNAPSHOT, json.encodeToString(snapshot))
+            .putString(KEY_SNAPSHOT, json.encodeToString(current))
             .apply()
     }
 

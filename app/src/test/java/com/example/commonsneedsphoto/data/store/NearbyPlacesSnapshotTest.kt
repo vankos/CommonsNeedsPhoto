@@ -44,7 +44,7 @@ class NearbyPlacesSnapshotTest {
     }
 
     @Test
-    fun `a snapshot saved before ancestors existed still decodes`() {
+    fun `a snapshot saved before ancestors existed decodes but is not usable`() {
         val stored = """
             {
               "savedAtMillis": 1700000000000,
@@ -67,6 +67,7 @@ class NearbyPlacesSnapshotTest {
         val snapshot = json.decodeFromString<NearbyPlacesSnapshot>(stored)
 
         assertNull(snapshot.places.single().instanceOfAncestors)
+        assertFalse(snapshot.isUsable(now))
     }
 
     @Test
@@ -82,6 +83,7 @@ class NearbyPlacesSnapshotTest {
         savedAtMillis = savedAtMillis,
         searchedCenter = LatLon(44.4268, 26.1025),
         radiusKm = 5.0,
+        version = NearbyPlacesSnapshot.CURRENT_VERSION,
         places = listOf(
             NearbyPlace(
                 qid = "Q1",

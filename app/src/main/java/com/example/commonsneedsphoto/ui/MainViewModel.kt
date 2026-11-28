@@ -25,6 +25,9 @@ import com.example.commonsneedsphoto.data.photo.PhotoProcessor
 import com.example.commonsneedsphoto.data.photo.UprightEstimator
 import com.example.commonsneedsphoto.data.photo.UprightMode
 import com.example.commonsneedsphoto.data.photo.UprightResult
+import com.example.commonsneedsphoto.data.store.IgnoredPlace
+import com.example.commonsneedsphoto.data.store.IgnoredPlaces
+import com.example.commonsneedsphoto.data.store.IgnoredPlacesStore
 import com.example.commonsneedsphoto.data.store.NearbyPlacesSnapshot
 import com.example.commonsneedsphoto.data.store.NearbyPlacesStore
 import com.example.commonsneedsphoto.data.upload.CommonsFileName
@@ -92,6 +95,7 @@ data class MainUiState(
     val viewportRadiusKm: Double = INITIAL_RADIUS_KM,
     val searchedCenter: LatLon? = null,
     val places: List<NearbyPlace> = emptyList(),
+    val ignoredPlaces: List<IgnoredPlace> = emptyList(),
     val isLoading: Boolean = false,
     val isLocating: Boolean = false,
     val error: String? = null,
@@ -113,11 +117,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val container = app.container
     private val prefs = application.getSharedPreferences("app_state", android.content.Context.MODE_PRIVATE)
     private val nearbyStore: NearbyPlacesStore = container.nearbyPlacesStore
+    private val ignoredStore: IgnoredPlacesStore = container.ignoredPlacesStore
 
     /** Fresh saved results of the last search, or null when there are none or they are stale. */
     private val cachedNearby = nearbyStore.load()
     private var nearbySavedAtMillis = cachedNearby?.savedAtMillis ?: 0L
     private var searchedRadiusKm = cachedNearby?.radiusKm ?: INITIAL_RADIUS_KM
+
+    /**
+     * Every place of the current result, including the excluded ones. The map
+     * shows only the visible part, but the excluded points stay here and in the
+     * saved snapshot so restoring one needs no new query.
+     */
+    private var allPlaces: List<NearbyPlace> = cachedNearby?.places.orEmpty()
+    private var ignored: IgnoredPlaces = ignoredStore.load()
 
     private val _state = MutableStateFlow(initialState())
     val state: StateFlow<MainUiState> = _state.asStateFlow()
@@ -149,7 +162,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             mapCenter = cachedNearby?.searchedCenter ?: LatLon(latitude, longitude),
             viewportRadiusKm = cachedNearby?.radiusKm ?: INITIAL_RADIUS_KM,
             searchedCenter = cachedNearby?.searchedCenter,
-            places = cachedNearby?.places.orEmpty(),
+            places = ignored.visible(allPlaces),
+            ignoredPlaces = ignored.places,
             hasSearched = cachedNearby != null,
             userName = container.session.userName,
             shouldRequestLocationPermission = !hasPermission &&
@@ -209,10 +223,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 persistCenter(center)
                 nearbySavedAtMillis = System.currentTimeMillis()
                 searchedRadiusKm = radius
+                allPlaces = places
                 cacheNearby(places, center, radius)
                 _state.update {
                     it.copy(
-                        places = places,
+                        places = ignored.visible(places),
                         isLoading = false,
                         hasSearched = true,
                         searchedCenter = center,
@@ -241,6 +256,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refresh() {
         searchHere(_state.value.mapCenter, _state.value.viewportRadiusKm)
+    }
+
+    /**
+     * Hides [place] from the map until it is restored in settings. The point stays
+     * in the saved snapshot, so the settings list can put it back without a new search.
+     */
+    fun ignorePlace(place: NearbyPlace) {
+        if (_state.value.upload?.isUploading == true) return
+        ignored = ignored.add(place)
+        ignoredStore.save(ignored)
+        dismissUpload()
+        _state.update {
+            it.copy(
+                places = ignored.visible(allPlaces),
+                ignoredPlaces = ignored.places,
+                message = app.getString(R.string.place_ignored, place.label),
+            )
+        }
+    }
+
+    /** Puts an excluded point back on the map, if it is still in the current result. */
+    fun restorePlace(qid: String) {
+        ignored = ignored.remove(qid)
+        ignoredStore.save(ignored)
+        _state.update {
+            it.copy(
+                places = ignored.visible(allPlaces),
+                ignoredPlaces = ignored.places,
+            )
+        }
     }
 
     fun onMapMoved(center: LatLon, radiusKm: Double) {
@@ -821,6 +866,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     null
                 }
+                val currentQid = _state.value.upload?.place?.qid
+                if (published != null && currentQid != null) {
+                    allPlaces = allPlaces.filterNot { it.qid == currentQid }
+                }
                 _state.update { state ->
                     val current = state.upload ?: return@update state
                     val result = published ?: current.uploaded
@@ -834,7 +883,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             uploaded = result,
                         ),
                         places = if (published != null) {
-                            state.places.filterNot { it.qid == current.place.qid }
+                            ignored.visible(allPlaces)
                         } else {
                             state.places
                         },
@@ -860,9 +909,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         container.uploadResumeStore.clearPublished(resumeKey)
                     }
                 }
+                val currentUpload = _state.value.upload
+                val result = published ?: currentUpload?.uploaded
+                if (result != null && currentUpload != null) {
+                    allPlaces = allPlaces.filterNot { it.qid == currentUpload.place.qid }
+                }
                 _state.update { state ->
                     val current = state.upload ?: return@update state
-                    val result = published ?: current.uploaded
                     state.copy(
                         upload = current.copy(
                             isUploading = false,
@@ -880,7 +933,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             },
                         ),
                         places = if (result != null) {
-                            state.places.filterNot { it.qid == current.place.qid }
+                            ignored.visible(allPlaces)
                         } else {
                             state.places
                         },
@@ -976,11 +1029,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    /** Re-saves the current list after a published upload removed a point from it. */
+    /**
+     * Re-saves the current result after a published upload removed a point from
+     * it. [allPlaces] is written instead of the visible list, so excluded points
+     * stay in the snapshot and can be restored from settings.
+     */
     private fun cacheCurrentNearby() {
         val current = _state.value
         val center = current.searchedCenter ?: return
-        cacheNearby(current.places, center, searchedRadiusKm)
+        cacheNearby(allPlaces, center, searchedRadiusKm)
     }
 
     companion object {

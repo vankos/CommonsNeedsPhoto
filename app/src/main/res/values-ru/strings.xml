@@ -30,6 +30,8 @@
     <string name="place_distance">%1$s от вас</string>
     <string name="place_open_wikidata">Элемент Викиданных</string>
     <string name="place_instance_of">Тип: %1$s</string>
+    <string name="ignore_place">Исключить эту точку</string>
+    <string name="place_ignored">«%1$s» больше не появится на карте.</string>
 
     <string name="upload_title">Загрузить фотографию</string>
     <string name="upload_photo_hint">Сфотографируйте это место или выберите фото из галереи.</string>
@@ -100,6 +102,19 @@
     <string name="not_logged_in">Вы не вошли</string>
     <string name="login_session_expired">Сессия Commons истекла. Войдите снова.</string>
     <string name="privacy_note">Это неофициальный MVP, не связанный с Wikimedia Commons.</string>
+
+    <string name="settings">Настройки</string>
+    <string name="back">Назад</string>
+    <string name="settings_ignored_places">Исключённые точки</string>
+    <string name="settings_ignored_empty">Пока нет исключённых точек.</string>
+    <plurals name="settings_ignored_count">
+        <item quantity="one">%1$d исключённая точка</item>
+        <item quantity="few">%1$d исключённые точки</item>
+        <item quantity="many">%1$d исключённых точек</item>
+        <item quantity="other">%1$d исключённой точки</item>
+    </plurals>
+    <string name="settings_ignored_hint">Исключённые точки больше не показываются на карте и не попадают в результаты поиска. Чтобы исключить точку, нажмите перечёркнутый глаз в её карточке.</string>
+    <string name="settings_restore_place">Снова показывать точку на карте</string>
 
     <string name="camera_error">Не удалось открыть камеру: %1$s</string>
     <string name="photo_error">Не удалось прочитать фото: %1$s</string>

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -95,6 +96,7 @@ fun MapScreen(viewModel: MainViewModel) {
     var showPermissionRationale by rememberSaveable { mutableStateOf(false) }
     var permissionForLocateOnly by rememberSaveable { mutableStateOf(false) }
     var showAccountDialog by remember { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -154,6 +156,12 @@ fun MapScreen(viewModel: MainViewModel) {
                     }
                     IconButton(onClick = { showAccountDialog = true }) {
                         Icon(Icons.Filled.Person, contentDescription = stringResource(R.string.account))
+                    }
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(
+                            Icons.Filled.Settings,
+                            contentDescription = stringResource(R.string.settings),
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -337,6 +345,14 @@ fun MapScreen(viewModel: MainViewModel) {
                 showAccountDialog = false
             },
             onDismiss = { showAccountDialog = false },
+        )
+    }
+
+    if (showSettings) {
+        SettingsScreen(
+            ignoredPlaces = state.ignoredPlaces,
+            onRestore = viewModel::restorePlace,
+            onDismiss = { showSettings = false },
         )
     }
 

@@ -47,6 +47,12 @@ flows are implemented — there are no Explore/Bookmarks/Contributions tabs.
   * edit the Commons file name, description and category (prefilled from Wikidata `P373`);
   * choose a licence (CC BY-SA 4.0, CC BY 4.0 or CC0);
   * upload the file to Wikimedia Commons.
+* **Settings and excluded places.** The gear in the top bar opens a settings page. Its first
+  setting is the list of excluded places. The crossed-out eye in a place card hides that place
+  from the map and from later search results, and the settings list shows every excluded place
+  with a cross that puts it back. Exclusions live in an app-private preference file
+  (`ignored_places`) and survive restarts. The saved search snapshot still contains the
+  excluded points, so restoring one needs no new query.
 * **Real Commons upload, in 512 KB chunks.** The upload uses the MediaWiki API directly:
   `action=query&meta=tokens&type=csrf` → `action=upload&stash=1&ignorewarnings=1` for every
   512 KB chunk → `action=upload` with the returned `filekey` to publish the finished stash and a
@@ -193,7 +199,9 @@ app/src/main/java/com/example/commonsneedsphoto/
 │   │   ├── LineSegmentDetector.kt  gradient-region line detector (LSD-lite)
 │   │   └── AutoEnhance.kt       histogram/white-balance/contrast colour matrix
 │   ├── location/LocationProvider.kt    one-shot LocationManager fix
-│   ├── store/NearbyPlacesStore.kt  saved nearby points, one-day expiry
+│   ├── store/
+│   │   ├── NearbyPlacesStore.kt  saved nearby points, one-day expiry
+│   │   └── IgnoredPlacesStore.kt places hidden from the map, restored in settings
 │   └── upload/
 │       ├── UploadChunks.kt        512 KB chunk plan, offsets, 6 h stash lifetime
 │       ├── UploadResume.kt        filekey + offset, published-but-P18-pending marker
@@ -207,6 +215,7 @@ app/src/main/java/com/example/commonsneedsphoto/
 └── ui/
     ├── MainViewModel.kt           screen state, search, login, upload, editor state
     ├── MapScreen.kt               osmdroid map, clustered canvas overlay, permission flow
+    ├── SettingsScreen.kt          settings page and the excluded-places list
     ├── UploadSheet.kt             photo picker, edit button, metadata form, licence, progress
     ├── PhotoEditorState.kt        editor state kept across rotation
     ├── PhotoEditorDialog.kt       crop/geometry/colour editor with draggable overlays
@@ -217,7 +226,8 @@ app/src/main/java/com/example/commonsneedsphoto/
 Dependencies are intentionally small: **Jetpack Compose (Material 3)**, **osmdroid** for the map,
 **OkHttp** for HTTP, **kotlinx.serialization** for JSON, **Coil** for the photo preview and
 **WorkManager** (`work-runtime-ktx`) for background uploads. There is no DI framework, database or
-navigation library — the MVP is a single screen plus two dialogs.
+navigation library — the MVP is a single map screen with full-screen dialogs (the photo editor
+and settings) and bottom sheets.
 
 ### Automatic geometry
 
@@ -352,6 +362,10 @@ effort: if it fails, the QID stays.
 The last successful result is kept in the private `nearby_cache` preference file
 (`NearbyPlacesStore`). A snapshot is reused only while it is less than a day old; a stale or
 unreadable one is deleted on the next start, which then runs the query again.
+
+Excluded places are listed separately in `ignored_places` (`IgnoredPlacesStore`). The snapshot
+keeps them, so an old result with excluded points still counts as usable; the map and the place
+count show only the places that are not excluded.
 
 Map tiles come from OpenStreetMap and are displayed with attribution. The app sets a descriptive
 User-Agent for osmdroid and should not be used for bulk tile downloads.

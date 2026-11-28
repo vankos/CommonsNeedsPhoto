@@ -204,6 +204,15 @@ fun UploadSheet(
                     }
                 }
                 IconButton(
+                    onClick = { viewModel.ignorePlace(state.place) },
+                    enabled = !state.isUploading,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_ignore),
+                        contentDescription = stringResource(R.string.ignore_place),
+                    )
+                }
+                IconButton(
                     onClick = viewModel::dismissUpload,
                     enabled = canDismiss,
                 ) {

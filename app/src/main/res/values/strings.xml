@@ -111,6 +111,18 @@
     </plurals>
     <string name="settings_ignored_hint">Excluded places no longer appear on the map or in search results. To exclude a place, tap the crossed-out eye in its card.</string>
     <string name="settings_restore_place">Show this place on the map again</string>
+    <string name="settings_exclusion_categories">Exclusion categories</string>
+    <plurals name="settings_exclusion_categories_count">
+        <item quantity="one">%1$d exclusion category</item>
+        <item quantity="other">%1$d exclusion categories</item>
+    </plurals>
+    <string name="settings_exclusion_categories_hint">Places of these Wikidata object types stay off the map and out of search results.</string>
+    <string name="settings_exclusion_categories_explanation">A place is skipped when its “instance of” contains one of these English Wikidata type labels. Case does not matter.</string>
+    <string name="settings_exclusion_categories_empty">No exclusion categories. Every Wikidata type is shown.</string>
+    <string name="settings_exclusion_category_add">Add category</string>
+    <string name="settings_exclusion_category_new">New category</string>
+    <string name="settings_exclusion_category_placeholder">e.g. hotel</string>
+    <string name="settings_exclusion_category_remove">Remove this category</string>
 
     <string name="camera_error">Could not start the camera: %1$s</string>
     <string name="photo_error">Could not read the photo: %1$s</string>

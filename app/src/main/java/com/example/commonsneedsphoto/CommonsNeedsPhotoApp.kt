@@ -8,6 +8,7 @@ import com.example.commonsneedsphoto.data.network.Network
 import com.example.commonsneedsphoto.data.network.WikidataApi
 import com.example.commonsneedsphoto.data.network.WikidataNearbyRepository
 import com.example.commonsneedsphoto.data.photo.PhotoProcessor
+import com.example.commonsneedsphoto.data.store.ExclusionCategoriesStore
 import com.example.commonsneedsphoto.data.store.IgnoredPlacesStore
 import com.example.commonsneedsphoto.data.store.NearbyPlacesStore
 import com.example.commonsneedsphoto.data.upload.ChunkedUploader
@@ -23,6 +24,7 @@ class AppContainer(application: Application) {
     val nearbyRepository = WikidataNearbyRepository()
     val nearbyPlacesStore = NearbyPlacesStore(application)
     val ignoredPlacesStore = IgnoredPlacesStore(application)
+    val exclusionCategoriesStore = ExclusionCategoriesStore(application)
     val locationProvider = LocationProvider(application)
     val uploadResumeStore = UploadResumeStore(application)
     val chunkedUploader = ChunkedUploader(commonsApi, uploadResumeStore)

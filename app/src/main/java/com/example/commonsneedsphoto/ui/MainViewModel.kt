@@ -25,6 +25,8 @@ import com.example.commonsneedsphoto.data.photo.PhotoProcessor
 import com.example.commonsneedsphoto.data.photo.UprightEstimator
 import com.example.commonsneedsphoto.data.photo.UprightMode
 import com.example.commonsneedsphoto.data.photo.UprightResult
+import com.example.commonsneedsphoto.data.store.ExclusionCategories
+import com.example.commonsneedsphoto.data.store.ExclusionCategoriesStore
 import com.example.commonsneedsphoto.data.store.IgnoredPlace
 import com.example.commonsneedsphoto.data.store.IgnoredPlaces
 import com.example.commonsneedsphoto.data.store.IgnoredPlacesStore
@@ -96,6 +98,7 @@ data class MainUiState(
     val searchedCenter: LatLon? = null,
     val places: List<NearbyPlace> = emptyList(),
     val ignoredPlaces: List<IgnoredPlace> = emptyList(),
+    val exclusionCategories: List<String> = emptyList(),
     val isLoading: Boolean = false,
     val isLocating: Boolean = false,
     val error: String? = null,
@@ -118,6 +121,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("app_state", android.content.Context.MODE_PRIVATE)
     private val nearbyStore: NearbyPlacesStore = container.nearbyPlacesStore
     private val ignoredStore: IgnoredPlacesStore = container.ignoredPlacesStore
+    private val exclusionCategoriesStore: ExclusionCategoriesStore =
+        container.exclusionCategoriesStore
 
     /** Fresh saved results of the last search, or null when there are none or they are stale. */
     private val cachedNearby = nearbyStore.load()
@@ -131,6 +136,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     private var allPlaces: List<NearbyPlace> = cachedNearby?.places.orEmpty()
     private var ignored: IgnoredPlaces = ignoredStore.load()
+    private var exclusionCategories: ExclusionCategories = exclusionCategoriesStore.load()
 
     private val _state = MutableStateFlow(initialState())
     val state: StateFlow<MainUiState> = _state.asStateFlow()
@@ -162,8 +168,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             mapCenter = cachedNearby?.searchedCenter ?: LatLon(latitude, longitude),
             viewportRadiusKm = cachedNearby?.radiusKm ?: INITIAL_RADIUS_KM,
             searchedCenter = cachedNearby?.searchedCenter,
-            places = ignored.visible(allPlaces),
+            places = visiblePlaces(allPlaces),
             ignoredPlaces = ignored.places,
+            exclusionCategories = exclusionCategories.categories,
             hasSearched = cachedNearby != null,
             userName = container.session.userName,
             shouldRequestLocationPermission = !hasPermission &&
@@ -227,7 +234,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 cacheNearby(places, center, radius)
                 _state.update {
                     it.copy(
-                        places = ignored.visible(places),
+                        places = visiblePlaces(places),
                         isLoading = false,
                         hasSearched = true,
                         searchedCenter = center,
@@ -269,7 +276,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         dismissUpload()
         _state.update {
             it.copy(
-                places = ignored.visible(allPlaces),
+                places = visiblePlaces(allPlaces),
                 ignoredPlaces = ignored.places,
                 message = app.getString(R.string.place_ignored, place.label),
             )
@@ -282,11 +289,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ignoredStore.save(ignored)
         _state.update {
             it.copy(
-                places = ignored.visible(allPlaces),
+                places = visiblePlaces(allPlaces),
                 ignoredPlaces = ignored.places,
             )
         }
     }
+
+    /**
+     * Leaves places of a Wikidata type ([value], e.g. "hotel") out of the map.
+     * The points stay in the snapshot, so removing the category brings them back
+     * without a new search.
+     */
+    fun addExclusionCategory(value: String) {
+        updateExclusionCategories(exclusionCategories.add(value))
+    }
+
+    /** Removes a type from the exclusion categories and shows its places again. */
+    fun removeExclusionCategory(value: String) {
+        updateExclusionCategories(exclusionCategories.remove(value))
+    }
+
+    private fun updateExclusionCategories(updated: ExclusionCategories) {
+        if (updated == exclusionCategories) return
+        exclusionCategories = updated
+        exclusionCategoriesStore.save(updated)
+        _state.update {
+            it.copy(
+                places = visiblePlaces(allPlaces),
+                exclusionCategories = updated.categories,
+            )
+        }
+    }
+
+    /** The part of [places] that neither the user nor a category excludes. */
+    private fun visiblePlaces(places: List<NearbyPlace>): List<NearbyPlace> =
+        exclusionCategories.visible(ignored.visible(places))
 
     fun onMapMoved(center: LatLon, radiusKm: Double) {
         val searched = _state.value.searchedCenter
@@ -883,7 +920,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             uploaded = result,
                         ),
                         places = if (published != null) {
-                            ignored.visible(allPlaces)
+                            visiblePlaces(allPlaces)
                         } else {
                             state.places
                         },
@@ -933,7 +970,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             },
                         ),
                         places = if (result != null) {
-                            ignored.visible(allPlaces)
+                            visiblePlaces(allPlaces)
                         } else {
                             state.places
                         },

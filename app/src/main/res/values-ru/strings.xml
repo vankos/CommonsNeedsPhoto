@@ -115,6 +115,20 @@
     </plurals>
     <string name="settings_ignored_hint">Исключённые точки больше не показываются на карте и не попадают в результаты поиска. Чтобы исключить точку, нажмите перечёркнутый глаз в её карточке.</string>
     <string name="settings_restore_place">Снова показывать точку на карте</string>
+    <string name="settings_exclusion_categories">Категории исключений</string>
+    <plurals name="settings_exclusion_categories_count">
+        <item quantity="one">%1$d категория исключений</item>
+        <item quantity="few">%1$d категории исключений</item>
+        <item quantity="many">%1$d категорий исключений</item>
+        <item quantity="other">%1$d категории исключений</item>
+    </plurals>
+    <string name="settings_exclusion_categories_hint">Точки этих типов объектов Викиданных не показываются на карте и в результатах поиска.</string>
+    <string name="settings_exclusion_categories_explanation">Точка пропускается, если в её поле «тип» (instance of) есть одна из этих английских меток Викиданных. Регистр не важен.</string>
+    <string name="settings_exclusion_categories_empty">Нет категорий исключений. Показываются все типы Викиданных.</string>
+    <string name="settings_exclusion_category_add">Добавить категорию</string>
+    <string name="settings_exclusion_category_new">Новая категория</string>
+    <string name="settings_exclusion_category_placeholder">например, hotel</string>
+    <string name="settings_exclusion_category_remove">Удалить эту категорию</string>
 
     <string name="camera_error">Не удалось открыть камеру: %1$s</string>
     <string name="photo_error">Не удалось прочитать фото: %1$s</string>

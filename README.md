@@ -47,12 +47,15 @@ flows are implemented — there are no Explore/Bookmarks/Contributions tabs.
   * edit the Commons file name, description and category (prefilled from Wikidata `P373`);
   * choose a licence (CC BY-SA 4.0, CC BY 4.0 or CC0);
   * upload the file to Wikimedia Commons.
-* **Settings and excluded places.** The gear in the top bar opens a settings page. Its first
-  setting is the list of excluded places. The crossed-out eye in a place card hides that place
-  from the map and from later search results, and the settings list shows every excluded place
-  with a cross that puts it back. Exclusions live in an app-private preference file
-  (`ignored_places`) and survive restarts. The saved search snapshot still contains the
-  excluded points, so restoring one needs no new query.
+* **Settings, excluded places and exclusion categories.** The gear in the top bar opens a
+  settings page. Its first setting is the list of excluded places. The crossed-out eye in a
+  place card hides that place from the map and from later search results, and the settings list
+  shows every excluded place with a cross that puts it back. Exclusions live in an app-private
+  preference file (`ignored_places`) and survive restarts. The second setting lists the
+  **exclusion categories** — Wikidata “instance of” types such as hotel, quarter or siege whose
+  places are skipped; the list starts with the same ten defaults as the StuffAround app and can
+  be edited. The saved search snapshot still contains the excluded points, so restoring one or
+  removing a category needs no new query.
 * **Real Commons upload, in 512 KB chunks.** The upload uses the MediaWiki API directly:
   `action=query&meta=tokens&type=csrf` → `action=upload&stash=1&ignorewarnings=1` for every
   512 KB chunk → `action=upload` with the returned `filekey` to publish the finished stash and a
@@ -201,7 +204,8 @@ app/src/main/java/com/example/commonsneedsphoto/
 │   ├── location/LocationProvider.kt    one-shot LocationManager fix
 │   ├── store/
 │   │   ├── NearbyPlacesStore.kt  saved nearby points, one-day expiry
-│   │   └── IgnoredPlacesStore.kt places hidden from the map, restored in settings
+│   │   ├── IgnoredPlacesStore.kt places hidden from the map, restored in settings
+│   │   └── ExclusionCategories.kt  skipped Wikidata types, defaults, shared preferences
 │   └── upload/
 │       ├── UploadChunks.kt        512 KB chunk plan, offsets, 6 h stash lifetime
 │       ├── UploadResume.kt        filekey + offset, published-but-P18-pending marker
@@ -215,7 +219,7 @@ app/src/main/java/com/example/commonsneedsphoto/
 └── ui/
     ├── MainViewModel.kt           screen state, search, login, upload, editor state
     ├── MapScreen.kt               osmdroid map, clustered canvas overlay, permission flow
-    ├── SettingsScreen.kt          settings page and the excluded-places list
+    ├── SettingsScreen.kt          settings page, excluded places and exclusion categories
     ├── UploadSheet.kt             photo picker, edit button, metadata form, licence, progress
     ├── PhotoEditorState.kt        editor state kept across rotation
     ├── PhotoEditorDialog.kt       crop/geometry/colour editor with draggable overlays
@@ -363,9 +367,12 @@ The last successful result is kept in the private `nearby_cache` preference file
 (`NearbyPlacesStore`). A snapshot is reused only while it is less than a day old; a stale or
 unreadable one is deleted on the next start, which then runs the query again.
 
-Excluded places are listed separately in `ignored_places` (`IgnoredPlacesStore`). The snapshot
-keeps them, so an old result with excluded points still counts as usable; the map and the place
-count show only the places that are not excluded.
+Excluded places are listed separately in `ignored_places` (`IgnoredPlacesStore`) and the
+exclusion categories in `exclusion_categories` (`ExclusionCategoriesStore`). The snapshot keeps
+the places both mechanisms hide, so an old result with excluded points still counts as usable;
+the map and the place count show only the places that are neither excluded individually nor by
+type. The category filter compares the lower-cased English `P31` labels the query already asks
+for, on the device, so changing a category does not run a new query.
 
 Map tiles come from OpenStreetMap and are displayed with attribution. The app sets a descriptive
 User-Agent for osmdroid and should not be used for bulk tile downloads.

@@ -351,7 +351,10 @@ fun MapScreen(viewModel: MainViewModel) {
     if (showSettings) {
         SettingsScreen(
             ignoredPlaces = state.ignoredPlaces,
+            exclusionCategories = state.exclusionCategories,
             onRestore = viewModel::restorePlace,
+            onAddExclusionCategory = viewModel::addExclusionCategory,
+            onRemoveExclusionCategory = viewModel::removeExclusionCategory,
             onDismiss = { showSettings = false },
         )
     }

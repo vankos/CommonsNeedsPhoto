@@ -5,7 +5,9 @@ coreKtx = "1.16.0"
 lifecycleRuntimeKtx = "2.8.7"
 lifecycleViewmodelCompose = "2.8.7"
 activityCompose = "1.9.3"
-composeBom = "2024.11.00"
+# 1.8+ exposes the public Compose autofill API (ContentType) used by LoginDialog;
+# on 1.7 the API is internal and system password managers do not see the login fields.
+composeBom = "2025.06.01"
 coroutines = "1.8.1"
 kotlinxSerialization = "1.7.3"
 osmdroid = "6.1.17"

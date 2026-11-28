@@ -1,8 +1,11 @@
 package com.example.commonsneedsphoto.data.model
 
+import kotlinx.serialization.Serializable
+
 /**
  * A Wikidata item that has coordinates but no image (P18) on Wikimedia Commons.
  */
+@Serializable
 data class NearbyPlace(
     val qid: String,
     val label: String,
@@ -19,4 +22,5 @@ data class NearbyPlace(
         distanceMeters(this.latitude, this.longitude, latitude, longitude)
 }
 
+@Serializable
 data class LatLon(val latitude: Double, val longitude: Double)

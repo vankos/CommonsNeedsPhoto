@@ -25,6 +25,8 @@ import com.example.commonsneedsphoto.data.photo.PhotoProcessor
 import com.example.commonsneedsphoto.data.photo.UprightEstimator
 import com.example.commonsneedsphoto.data.photo.UprightMode
 import com.example.commonsneedsphoto.data.photo.UprightResult
+import com.example.commonsneedsphoto.data.store.NearbyPlacesSnapshot
+import com.example.commonsneedsphoto.data.store.NearbyPlacesStore
 import com.example.commonsneedsphoto.data.upload.CommonsFileName
 import com.example.commonsneedsphoto.data.upload.UploadLicense
 import com.example.commonsneedsphoto.data.upload.UploadResumeKey
@@ -110,6 +112,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as CommonsNeedsPhotoApp
     private val container = app.container
     private val prefs = application.getSharedPreferences("app_state", android.content.Context.MODE_PRIVATE)
+    private val nearbyStore: NearbyPlacesStore = container.nearbyPlacesStore
+
+    /** Fresh saved results of the last search, or null when there are none or they are stale. */
+    private val cachedNearby = nearbyStore.load()
+    private var nearbySavedAtMillis = cachedNearby?.savedAtMillis ?: 0L
+    private var searchedRadiusKm = cachedNearby?.radiusKm ?: INITIAL_RADIUS_KM
 
     private val _state = MutableStateFlow(initialState())
     val state: StateFlow<MainUiState> = _state.asStateFlow()
@@ -122,10 +130,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var targetId = 0L
 
     init {
-        when {
-            container.locationProvider.hasPermission() -> locate(searchAfter = true)
-            prefs.getBoolean(KEY_PERMISSION_ASKED, false) ->
-                searchHere(DEFAULT_CENTER, INITIAL_RADIUS_KM)
+        // Saved points less than a day old are shown as they are: a restart must not
+        // query Wikidata again and replace what the map already has.
+        if (cachedNearby == null) {
+            when {
+                container.locationProvider.hasPermission() -> locate(searchAfter = true)
+                prefs.getBoolean(KEY_PERMISSION_ASKED, false) ->
+                    searchHere(DEFAULT_CENTER, INITIAL_RADIUS_KM)
+            }
         }
     }
 
@@ -134,7 +146,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val longitude = prefs.getFloat(KEY_LAST_LON, DEFAULT_CENTER.longitude.toFloat()).toDouble()
         val hasPermission = container.locationProvider.hasPermission()
         return MainUiState(
-            mapCenter = LatLon(latitude, longitude),
+            mapCenter = cachedNearby?.searchedCenter ?: LatLon(latitude, longitude),
+            viewportRadiusKm = cachedNearby?.radiusKm ?: INITIAL_RADIUS_KM,
+            searchedCenter = cachedNearby?.searchedCenter,
+            places = cachedNearby?.places.orEmpty(),
+            hasSearched = cachedNearby != null,
             userName = container.session.userName,
             shouldRequestLocationPermission = !hasPermission &&
                 !prefs.getBoolean(KEY_PERMISSION_ASKED, false),
@@ -149,7 +165,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().putBoolean(KEY_PERMISSION_ASKED, true).apply()
         _state.update { it.copy(shouldRequestLocationPermission = false) }
         if (granted) {
-            locate(searchAfter = searchAfter, keepZoom = keepZoom)
+            // With saved points already on the map, a permission granted at start only
+            // recentres the map instead of replacing them with a fresh query.
+            locate(
+                searchAfter = searchAfter && _state.value.places.isEmpty(),
+                keepZoom = keepZoom,
+            )
         } else {
             _state.update { it.copy(message = app.getString(R.string.location_permission_denied)) }
             if (searchAfter && !_state.value.hasSearched) {
@@ -186,6 +207,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val places = container.nearbyRepository.findPlacesWithoutPhoto(center, radius)
                 persistCenter(center)
+                nearbySavedAtMillis = System.currentTimeMillis()
+                searchedRadiusKm = radius
+                cacheNearby(places, center, radius)
                 _state.update {
                     it.copy(
                         places = places,
@@ -816,6 +840,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         },
                     )
                 }
+                if (published != null) cacheCurrentNearby()
             }
 
             WorkInfo.State.SUCCEEDED -> {
@@ -861,6 +886,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         },
                     )
                 }
+                cacheCurrentNearby()
             }
 
             WorkInfo.State.FAILED,
@@ -928,6 +954,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .putFloat(KEY_LAST_LAT, center.latitude.toFloat())
             .putFloat(KEY_LAST_LON, center.longitude.toFloat())
             .apply()
+    }
+
+    /**
+     * Saves a search result for the next start. An empty result clears the cache
+     * instead of keeping points from an older query. [nearbySavedAtMillis] is not
+     * touched here, so removing points after an upload does not extend the day.
+     */
+    private fun cacheNearby(places: List<NearbyPlace>, center: LatLon, radiusKm: Double) {
+        if (places.isEmpty()) {
+            nearbyStore.clear()
+            return
+        }
+        nearbyStore.save(
+            NearbyPlacesSnapshot(
+                savedAtMillis = nearbySavedAtMillis,
+                searchedCenter = center,
+                radiusKm = radiusKm,
+                places = places,
+            ),
+        )
+    }
+
+    /** Re-saves the current list after a published upload removed a point from it. */
+    private fun cacheCurrentNearby() {
+        val current = _state.value
+        val center = current.searchedCenter ?: return
+        cacheNearby(current.places, center, searchedRadiusKm)
     }
 
     companion object {

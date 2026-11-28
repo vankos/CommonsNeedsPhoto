@@ -22,6 +22,11 @@ flows are implemented — there are no Explore/Bookmarks/Contributions tabs.
   chosen — it does not reload places; tap **Search this area** (or the refresh icon) when you want
   fresh data. The next query radius is derived from the current viewport (centre to the
   north-east corner, clamped to 0.5–30 km).
+* **Saved points between restarts.** The result of the last successful search is stored on the
+  device with its centre and radius. Opening the app again shows the same points immediately and
+  does not query Wikidata while the saved points are less than a day old; after a day the app
+  drops them and searches again as usual. Only an explicit refresh or **Search this area**
+  replaces them before that.
 * **Photo editing before upload.** The pencil on the photo preview opens a small editor with
   three tools:
   * **Crop** — drag the corners, pick a 1:1, 4:3, 3:2 or 16:9 frame, or rotate the photo by
@@ -188,6 +193,7 @@ app/src/main/java/com/example/commonsneedsphoto/
 │   │   ├── LineSegmentDetector.kt  gradient-region line detector (LSD-lite)
 │   │   └── AutoEnhance.kt       histogram/white-balance/contrast colour matrix
 │   ├── location/LocationProvider.kt    one-shot LocationManager fix
+│   ├── store/NearbyPlacesStore.kt  saved nearby points, one-day expiry
 │   └── upload/
 │       ├── UploadChunks.kt        512 KB chunk plan, offsets, 6 h stash lifetime
 │       ├── UploadResume.kt        filekey + offset, published-but-P18-pending marker
@@ -342,6 +348,10 @@ call) and replaces the QID with an available label, preferring the device langua
 `mul`, then any label by language code. A place whose only labels are Spanish and Catalan is
 therefore still shown with a readable name instead of `Q108142865`. The extra lookup is best
 effort: if it fails, the QID stays.
+
+The last successful result is kept in the private `nearby_cache` preference file
+(`NearbyPlacesStore`). A snapshot is reused only while it is less than a day old; a stale or
+unreadable one is deleted on the next start, which then runs the query again.
 
 Map tiles come from OpenStreetMap and are displayed with attribution. The app sets a descriptive
 User-Agent for osmdroid and should not be used for bulk tile downloads.
